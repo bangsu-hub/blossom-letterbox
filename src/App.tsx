@@ -1,0 +1,1530 @@
+import { useState, useEffect, useRef } from 'react'
+
+/* ═══════════════════════════════════════════════════════════
+   TYPES
+═══════════════════════════════════════════════════════════ */
+type LetterType = '칭찬' | '응원' | '감사'
+type Stage = 0 | 1 | 2 | 3
+type Route =
+  | { path: 'landing' }
+  | { path: 'create' }
+  | { path: 'dashboard'; userId: string }
+  | { path: 'write'; userId: string }
+
+interface Letter {
+  id: string; type: LetterType; message: string
+  from: string; isAnonymous: boolean; createdAt: string
+}
+interface UserData {
+  id: string; nickname: string; password: string; letters: Letter[]
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CONSTANTS — FLOWER SPOTS (균등 분포: 나무 전체에 고루)
+═══════════════════════════════════════════════════════════ */
+//
+//  가지 영역별 그룹으로 나눠 36개 좌표 설계
+//  [A] 최상단 / [B] 상단 중앙 / [C] 상단 좌 / [D] 상단 우
+//  [E] 중간 좌 메인 / [F] 중간 우 메인
+//  [G] 하단 좌 메인 / [H] 하단 우 메인
+//  [I] 좌측 끝 / [J] 우측 끝
+//
+const FLOWER_SPOTS: { x: number; y: number }[] = [
+  // [A] 최상단 가지
+  { x: 193, y: 62 }, { x: 180, y: 72 }, { x: 206, y: 72 },
+
+  // [B] 상단 중앙 갈래
+  { x: 152, y: 108 }, { x: 168, y: 98 }, { x: 185, y: 88 },
+  { x: 201, y: 88 }, { x: 218, y: 98 }, { x: 234, y: 108 },
+
+  // [C] 상단 좌 갈래
+  { x: 115, y: 120 }, { x: 130, y: 112 }, { x: 143, y: 124 },
+  { x: 104, y: 132 },
+
+  // [D] 상단 우 갈래
+  { x: 263, y: 112 }, { x: 250, y: 124 }, { x: 275, y: 120 },
+  { x: 287, y: 132 },
+
+  // [E] 중간 좌 메인 가지
+  { x: 96, y: 148 }, { x: 112, y: 140 }, { x: 80, y: 158 },
+
+  // [F] 중간 우 메인 가지
+  { x: 290, y: 140 }, { x: 305, y: 148 }, { x: 316, y: 158 },
+
+  // [G] 하단 좌 메인 가지
+  { x: 65, y: 172 }, { x: 52, y: 182 }, { x: 78, y: 180 },
+
+  // [H] 하단 우 메인 가지
+  { x: 330, y: 172 }, { x: 345, y: 180 }, { x: 317, y: 182 },
+
+  // [I] 좌 끝 가지
+  { x: 38, y: 162 }, { x: 46, y: 154 },
+
+  // [J] 우 끝 가지
+  { x: 356, y: 162 }, { x: 348, y: 154 },
+
+  // 중간 추가 밀도
+  { x: 158, y: 140 }, { x: 228, y: 140 },
+  { x: 175, y: 108 }, { x: 210, y: 108 },
+]
+
+const LEAF_SPOTS = [
+  { x: 148, y: 130, a: -22 }, { x: 170, y: 150, a: 18 },
+  { x: 220, y: 130, a: 22 },  { x: 206, y: 150, a: -18 },
+  { x: 100, y: 150, a: -30 }, { x: 83, y: 172, a: 26 },
+  { x: 300, y: 150, a: 30 },  { x: 316, y: 172, a: -26 },
+  { x: 176, y: 112, a: -12 }, { x: 210, y: 112, a: 12 },
+  { x: 62, y: 186, a: -20 },  { x: 342, y: 186, a: 20 },
+]
+
+const TYPE_META: Record<LetterType, {
+  color: string; soft: string; bg: string; pill: string; emoji: string; desc: string
+}> = {
+  '칭찬': { color: '#FF6B9D', soft: '#FFB3CC', bg: '#FFF0F6', pill: '#FFE0EE', emoji: '✨', desc: '잘한 점을 콕 집어서' },
+  '응원': { color: '#FF8C42', soft: '#FFBD85', bg: '#FFF4EE', pill: '#FFE5D0', emoji: '🔥', desc: '힘내라고 등 두드려주며' },
+  '감사': { color: '#A78BFA', soft: '#C4B5FD', bg: '#F5F0FF', pill: '#E8DDFF', emoji: '🌸', desc: '마음 깊이 고마움을' },
+}
+
+interface StageConf {
+  skyA: string; skyB: string; ground: string
+  trunkColor: string; bodyBg: string
+  label: string; labelEmoji: string
+  hasSun: boolean; hasHills: boolean
+  flowerScale: number // 단계별 꽃 크기 배율
+}
+const STAGE_CONF: StageConf[] = [
+  {
+    skyA: '#E8E8EC', skyB: '#DCDCE2', ground: '#B4C0AC',
+    trunkColor: '#9A8880', bodyBg: '#F2F2F2',
+    label: '봄을 기다리는 중...', labelEmoji: '🌱',
+    hasSun: false, hasHills: false,
+    flowerScale: 1.0,
+  },
+  {
+    skyA: '#FFFDF9', skyB: '#FFF4EE', ground: '#C8D8A0',
+    trunkColor: '#8B5E3C', bodyBg: '#FFFDF9',
+    label: '봄이 오고 있어요', labelEmoji: '🌷',
+    hasSun: false, hasHills: false,
+    flowerScale: 1.15,
+  },
+  {
+    skyA: '#FFEEF8', skyB: '#FFF5DC', ground: '#9CCA70',
+    trunkColor: '#7A4830', bodyBg: '#FFF8F5',
+    label: '꽃이 피기 시작했어요', labelEmoji: '🌸',
+    hasSun: true, hasHills: true,
+    flowerScale: 1.35,
+  },
+  {
+    skyA: '#FFF5F7', skyB: '#EEF0FF', ground: '#7ABB50',
+    trunkColor: '#6B3F22', bodyBg: '#FFF5F7',
+    label: '활짝 피었어요!', labelEmoji: '🌸✨',
+    hasSun: true, hasHills: true,
+    flowerScale: 1.55,
+  },
+]
+
+/* ═══════════════════════════════════════════════════════════
+   STORAGE & ROUTING
+═══════════════════════════════════════════════════════════ */
+const DB_KEY = 'blossom_db_v4'
+const SESSION_KEY = 'blossom_auth_v4' // { userId: true }
+
+function getDB(): Record<string, UserData> {
+  try { return JSON.parse(localStorage.getItem(DB_KEY) || '{}') } catch { return {} }
+}
+function saveDB(db: Record<string, UserData>) {
+  localStorage.setItem(DB_KEY, JSON.stringify(db))
+}
+function getUser(id: string): UserData | null { return getDB()[id] || null }
+function createUser(nickname: string, password: string): UserData {
+  const user: UserData = { id: Math.random().toString(36).slice(2, 9), nickname, password, letters: [] }
+  const db = getDB(); db[user.id] = user; saveDB(db)
+  localStorage.setItem('blossom_me', user.id)
+  return user
+}
+function addLetterToUser(userId: string, letter: Letter): boolean {
+  const db = getDB()
+  if (!db[userId]) return false
+  db[userId].letters.push(letter); saveDB(db); return true
+}
+function getMyUserId(): string | null { return localStorage.getItem('blossom_me') }
+
+// Session auth helpers
+function isAuthed(userId: string): boolean {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || '{}')[userId] === true }
+  catch { return false }
+}
+function setAuthed(userId: string) {
+  try {
+    const s = JSON.parse(sessionStorage.getItem(SESSION_KEY) || '{}')
+    s[userId] = true; sessionStorage.setItem(SESSION_KEY, JSON.stringify(s))
+  } catch {}
+}
+
+function getStage(count: number): Stage {
+  if (count >= 5) return 3
+  if (count >= 3) return 2
+  if (count >= 1) return 1
+  return 0
+}
+
+function parseRoute(hash: string): Route {
+  const h = hash.replace(/^#/, '') || '/'
+  if (!h || h === '/') return { path: 'landing' }
+  if (h === '/create') return { path: 'create' }
+  const box = h.match(/^\/box\/([^/]+)$/)
+  if (box) return { path: 'dashboard', userId: box[1] }
+  const write = h.match(/^\/write\/([^/]+)$/)
+  if (write) return { path: 'write', userId: write[1] }
+  return { path: 'landing' }
+}
+const go = (path: string) => { window.location.hash = path }
+
+/* ═══════════════════════════════════════════════════════════
+   GLOBAL CSS
+═══════════════════════════════════════════════════════════ */
+const CSS = `
+  @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root {
+    height: 100%;
+    font-family: 'Pretendard', -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: #E8E0E8;
+  }
+  .app-shell {
+    width: 100%;
+    max-width: 430px;
+    min-height: 100dvh;
+    margin: 0 auto;
+    position: relative;
+    overflow: hidden;
+  }
+
+  @keyframes petalFall {
+    0%   { transform: translateY(-40px) rotate(var(--r0)) translateX(0); opacity:.9; }
+    45%  { transform: translateY(48vh)  rotate(var(--r1)) translateX(var(--dx)); opacity:.75; }
+    100% { transform: translateY(110vh) rotate(var(--r2)) translateX(0); opacity:0; }
+  }
+  @keyframes fadeUp {
+    from { opacity:0; transform:translateY(18px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+  @keyframes slideUp {
+    from { opacity:0; transform:translateY(100%); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+  @keyframes bloomIn {
+    0%   { transform:scale(0) rotate(-35deg); opacity:0; }
+    60%  { transform:scale(1.25) rotate(6deg); opacity:1; }
+    100% { transform:scale(1) rotate(0); opacity:1; }
+  }
+  @keyframes sway {
+    0%,100% { transform-origin:50% 100%; transform:rotate(0deg); }
+    25%      { transform-origin:50% 100%; transform:rotate(0.7deg); }
+    75%      { transform-origin:50% 100%; transform:rotate(-0.7deg); }
+  }
+  @keyframes floatY {
+    0%,100% { transform:translateY(0); }
+    50%     { transform:translateY(-8px); }
+  }
+  @keyframes wiggle {
+    0%,100% { transform:rotate(-4deg) scale(1); }
+    50%     { transform:rotate(4deg) scale(1.09); }
+  }
+  @keyframes heartbeat {
+    0%,100% { transform:scale(1); }
+    30%     { transform:scale(1.08); }
+    60%     { transform:scale(1.04); }
+  }
+  @keyframes shimmer {
+    from { background-position:200% center; }
+    to   { background-position:-200% center; }
+  }
+  @keyframes fadeIn {
+    from { opacity:0; } to { opacity:1; }
+  }
+  @keyframes scaleIn {
+    from { opacity:0; transform:scale(0.92); }
+    to   { opacity:1; transform:scale(1); }
+  }
+  @keyframes shakePw {
+    0%,100% { transform:translateX(0); }
+    20%     { transform:translateX(-8px); }
+    40%     { transform:translateX(8px); }
+    60%     { transform:translateX(-6px); }
+    80%     { transform:translateX(6px); }
+  }
+
+  .screen-enter { animation:slideUp .38s cubic-bezier(0.22,1,0.36,1) forwards; }
+  .shake { animation:shakePw 0.4s ease; }
+
+  button { cursor:pointer; border:none; outline:none; font-family:inherit; }
+  input, textarea { font-family:inherit; }
+  ::-webkit-scrollbar { display:none; }
+  * { scrollbar-width:none; }
+`
+
+/* ═══════════════════════════════════════════════════════════
+   FALLING PETALS (Stage 3)
+═══════════════════════════════════════════════════════════ */
+const PETALS_POOL = Array.from({ length: 20 }, (_, i) => ({
+  id: i,
+  left: 3 + (i * 97 / 19) % 91,
+  delay: (i * 1.85) % 9,
+  dur: 5.5 + (i * 1.1) % 4,
+  size: 9 + (i * 0.85) % 8,
+  r0: `${(i * 53) % 360}deg`,
+  r1: `${(i * 53 + 115) % 360}deg`,
+  r2: `${(i * 53 + 235) % 360}deg`,
+  dx: `${-14 + (i * 7) % 28}px`,
+}))
+
+function FallingPetals() {
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 14 }}>
+      {PETALS_POOL.map(p => (
+        <div key={p.id} style={{
+          position: 'absolute', left: `${p.left}%`, top: '-24px',
+          width: p.size, height: p.size * 0.72,
+          background: 'radial-gradient(ellipse at 40% 30%, #FFE0EC, #FFB3CC)',
+          borderRadius: '50% 30% 50% 30% / 40% 50% 40% 50%',
+          ['--r0' as any]: p.r0, ['--r1' as any]: p.r1, ['--r2' as any]: p.r2,
+          ['--dx' as any]: p.dx,
+          animation: `petalFall ${p.dur}s ${p.delay}s infinite ease-in-out`,
+        }} />
+      ))}
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FLOWER — 모든 stage에서 5장 꽃잎, 단계별 크기 증가
+═══════════════════════════════════════════════════════════ */
+const FLOWER_PALETTES = [
+  ['#FFB3CC', '#FFA0BC', '#FFC8D8', '#FF90B4', '#FFD4E4'],
+  ['#FF88B0', '#FFB0CC', '#FFC4DA', '#FF78A8', '#FFCCE2'],
+  ['#FF6B9D', '#FF9EC0', '#FFB8D2', '#FF5593', '#FFAAC8'],
+  ['#FF4F8A', '#FF8CB6', '#FFACD0', '#FF3A7E', '#FF9CC4'],
+]
+
+function Flower({
+  x, y, stage, flowerScale, delayMs,
+}: {
+  x: number; y: number; stage: Stage; flowerScale: number; delayMs: number
+}) {
+  const palette = FLOWER_PALETTES[stage]
+  const colorIdx = Math.floor(Math.abs(Math.sin(x * 0.37 + y * 0.23)) * palette.length)
+  const petalColor = palette[colorIdx]
+
+  // petal geometry
+  const BASE_RX = 4.8, BASE_RY = 8.8
+  const rx = BASE_RX * flowerScale
+  const ry = BASE_RY * flowerScale
+  const centerR = BASE_RX * flowerScale * 0.62
+  const innerR = centerR * 0.52
+  const offsetY = ry * 0.74
+
+  return (
+    <g style={{ animation: `bloomIn 0.48s ${delayMs}ms ease backwards` }}>
+      {/* 5 petals */}
+      {[0, 72, 144, 216, 288].map(angle => (
+        <ellipse
+          key={angle}
+          cx={x} cy={y - offsetY}
+          rx={rx} ry={ry}
+          fill={petalColor}
+          opacity={0.93}
+          transform={`rotate(${angle}, ${x}, ${y})`}
+        />
+      ))}
+      {/* center glow */}
+      <circle cx={x} cy={y} r={centerR} fill="#FFF4F8" opacity={0.95} />
+      <circle cx={x} cy={y} r={innerR} fill="#FFD8EC" opacity={0.85} />
+      {/* tiny stamens */}
+      {[0, 60, 120, 180, 240, 300].map(a => {
+        const rad = (a * Math.PI) / 180
+        const sr = innerR * 0.65
+        return <circle key={a} cx={x + Math.cos(rad) * sr} cy={y + Math.sin(rad) * sr}
+          r={innerR * 0.22} fill="#FFAACC" opacity={0.7} />
+      })}
+    </g>
+  )
+}
+
+function LeafShape({ x, y, a }: { x: number; y: number; a: number }) {
+  return (
+    <ellipse cx={x} cy={y} rx={4.2} ry={9}
+      fill="#72CC58" opacity={0.75}
+      transform={`rotate(${a}, ${x}, ${y})`} />
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CHERRY BLOSSOM TREE
+═══════════════════════════════════════════════════════════ */
+function CherryTree({ letterCount }: { letterCount: number }) {
+  const stage = getStage(letterCount)
+  const conf = STAGE_CONF[stage]
+  const visibleCount = Math.min(letterCount, FLOWER_SPOTS.length)
+
+  return (
+    <svg viewBox="0 0 390 400" xmlns="http://www.w3.org/2000/svg"
+      style={{ width: '100%', display: 'block', transition: 'all 1.6s ease' }}>
+      <defs>
+        <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={conf.skyA} />
+          <stop offset="100%" stopColor={conf.skyB} />
+        </linearGradient>
+        <linearGradient id="trunkGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={conf.trunkColor} stopOpacity={0.8} />
+          <stop offset="50%" stopColor={conf.trunkColor} />
+          <stop offset="100%" stopColor={conf.trunkColor} stopOpacity={0.8} />
+        </linearGradient>
+        <radialGradient id="groundGrad" cx="50%" cy="25%">
+          <stop offset="0%" stopColor={conf.ground} />
+          <stop offset="100%" stopColor={conf.ground} stopOpacity={0.5} />
+        </radialGradient>
+      </defs>
+
+      {/* Sky */}
+      <rect width="390" height="368" fill="url(#skyGrad)" style={{ transition: 'all 1.6s ease' }} />
+
+      {/* Sun */}
+      {conf.hasSun && (
+        <circle cx={345} cy={58} r={28}
+          fill={stage === 3 ? '#FFE878' : '#F8F0B8'} opacity={0.58}
+          style={{ transition: 'all 1.6s ease' }} />
+      )}
+
+      {/* Distant hills */}
+      {conf.hasHills && (
+        <>
+          <ellipse cx={78} cy={282} rx={125} ry={42}
+            fill={stage === 3 ? '#FFCCE0' : '#F0D8B8'} opacity={0.3}
+            style={{ transition: 'all 1.6s ease' }} />
+          <ellipse cx={322} cy={277} rx={130} ry={46}
+            fill={stage === 3 ? '#FFD0E8' : '#F4DCC0'} opacity={0.26}
+            style={{ transition: 'all 1.6s ease' }} />
+        </>
+      )}
+
+      {/* Ground */}
+      <ellipse cx={195} cy={390} rx={200} ry={46}
+        fill="url(#groundGrad)" style={{ transition: 'all 1.6s ease' }} />
+
+      {/* Stage 3: fallen petals on ground */}
+      {stage === 3 && [55, 110, 168, 238, 298, 352].map((px, i) => (
+        <g key={i}>
+          {[0, 120, 240].map(a => (
+            <ellipse key={a} cx={px} cy={376 - (i % 3)} rx={3.2} ry={5.5}
+              fill="#FFB8CC"
+              transform={`rotate(${a + i * 25}, ${px}, ${376 - i % 3})`}
+              opacity={0.62} />
+          ))}
+        </g>
+      ))}
+
+      {/* ── Tree group (sways in stage 2+) ── */}
+      <g style={{ animation: stage >= 2 ? 'sway 5s ease-in-out infinite' : 'none' }}>
+        {/* Branches */}
+        <g stroke="url(#trunkGrad)" strokeLinecap="round" fill="none">
+          {/* Main trunk */}
+          <path d="M195,400 C193,368 192,335 192,302 C191,274 190,250 190,220" strokeWidth="18" />
+          <path d="M190,230 C189,208 188,184 187,158" strokeWidth="13" />
+          <path d="M187,168 C186,148 185,128 184,108" strokeWidth="9" />
+
+          {/* Left main */}
+          <path d="M192,275 C172,257 150,240 126,222 C104,206 82,192 62,180" strokeWidth="11" />
+          <path d="M62,180 C50,172 39,165 32,157" strokeWidth="7" />
+          <path d="M106,230 C93,219 80,209 70,202" strokeWidth="6" />
+
+          {/* Right main */}
+          <path d="M193,270 C215,251 240,236 266,220 C288,206 310,193 330,181" strokeWidth="11" />
+          <path d="M330,181 C342,173 354,165 361,157" strokeWidth="7" />
+          <path d="M282,228 C296,217 310,207 318,200" strokeWidth="6" />
+
+          {/* Upper left */}
+          <path d="M189,206 C170,194 150,180 132,167 C116,155 102,146 89,138" strokeWidth="8" />
+          <path d="M89,138 C77,129 64,121 55,113" strokeWidth="5" />
+
+          {/* Upper right */}
+          <path d="M191,204 C211,190 233,176 253,163 C269,152 285,144 298,137" strokeWidth="8" />
+          <path d="M298,137 C310,129 323,122 332,114" strokeWidth="5" />
+
+          {/* Top forks */}
+          <path d="M186,150 C175,135 161,120 151,106" strokeWidth="6" />
+          <path d="M186,148 C198,132 215,117 226,103" strokeWidth="6" />
+          <path d="M154,108 C145,99 136,90 129,82" strokeWidth="4" />
+          <path d="M224,104 C234,95 244,86 252,78" strokeWidth="4" />
+        </g>
+
+        {/* Leaves (stage 2+) */}
+        {stage >= 2 && LEAF_SPOTS.map((l, i) => (
+          <LeafShape key={i} x={l.x} y={l.y} a={l.a} />
+        ))}
+
+        {/* Flowers — stage 0: placeholder dots, stage 1+: full 5-petal flowers */}
+        {FLOWER_SPOTS.map((spot, i) => {
+          const isVisible = i < visibleCount
+
+          if (!isVisible) {
+            // 배치 힌트 점 (stage 0에서만 아주 연하게)
+            return stage === 0
+              ? <circle key={i} cx={spot.x} cy={spot.y} r={2.5} fill="#C8C0C4" opacity={0.15} />
+              : null
+          }
+
+          // 5장 꽃잎 — 가장 최근 꽃은 bloomIn 애니메이션
+          const isNewest = i === letterCount - 1
+          return (
+            <Flower
+              key={i}
+              x={spot.x} y={spot.y}
+              stage={stage}
+              flowerScale={conf.flowerScale}
+              delayMs={isNewest ? 0 : 0}
+            />
+          )
+        })}
+
+        {/* Tiny birds (stage 3) */}
+        {stage === 3 && (
+          <g fill="none" stroke="#8A7090" strokeWidth="1.2" strokeLinecap="round">
+            <path d="M50 72 Q54 67 59 72" />
+            <path d="M62 76 Q66 71 71 76" />
+            <path d="M306 84 Q310 79 315 84" />
+          </g>
+        )}
+      </g>
+    </svg>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SHARED UI ATOMS
+═══════════════════════════════════════════════════════════ */
+function BackBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{
+      width: 40, height: 40, borderRadius: 14,
+      background: '#FFE8F2', color: '#FF6B9D',
+      fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700,
+    }}>←</button>
+  )
+}
+
+function PillBadge({ children, color, bg }: { children: React.ReactNode; color: string; bg: string }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+      background: bg, color, borderRadius: 99,
+      padding: '3px 10px', fontSize: 11, fontWeight: 700,
+    }}>{children}</span>
+  )
+}
+
+function ShimmerStrip() {
+  return (
+    <div style={{
+      height: 4,
+      background: 'linear-gradient(90deg, #FFB3CC 0%, #FF85AD 25%, #FFBD85 50%, #C4B5FD 75%, #FFB3CC 100%)',
+      backgroundSize: '200% 100%',
+      animation: 'shimmer 4s linear infinite',
+    }} />
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LETTER MODAL
+═══════════════════════════════════════════════════════════ */
+function LetterModal({ letter, onClose }: { letter: Letter; onClose: () => void }) {
+  const m = TYPE_META[letter.type]
+  return (
+    <div onClick={onClose} style={{
+      position: 'absolute', inset: 0, zIndex: 100,
+      background: 'rgba(30,10,20,0.48)',
+      backdropFilter: 'blur(6px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '0 20px',
+      animation: 'fadeIn 0.22s ease forwards',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: '100%', maxWidth: 360,
+        background: 'rgba(255,255,255,0.96)',
+        backdropFilter: 'blur(20px)',
+        borderRadius: 28, overflow: 'hidden',
+        border: `2px solid ${m.pill}`,
+        boxShadow: `0 24px 70px ${m.color}28`,
+        animation: 'scaleIn 0.28s cubic-bezier(0.22,1,0.36,1) forwards',
+      }}>
+        <div style={{
+          padding: '18px 22px 14px',
+          background: `linear-gradient(135deg, ${m.bg}, rgba(255,255,255,0))`,
+          borderBottom: `1.5px solid ${m.pill}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: '50%',
+              background: `linear-gradient(135deg, ${m.soft}, ${m.color})`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
+              animation: 'floatY 2.5s ease-in-out infinite',
+            }}>{m.emoji}</div>
+            <div>
+              <PillBadge color={m.color} bg={m.pill}>{letter.type} 편지</PillBadge>
+              <p style={{ fontSize: 10, color: '#C0A8C0', marginTop: 3, fontWeight: 500 }}>{letter.createdAt}</p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            width: 32, height: 32, borderRadius: 10,
+            background: '#F0E8F0', color: '#A888A8', fontSize: 16,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>✕</button>
+        </div>
+        <div style={{ padding: '20px 22px', minHeight: 100 }}>
+          <p style={{ fontSize: 15, lineHeight: 2, color: '#2D1020', fontWeight: 400, whiteSpace: 'pre-wrap' }}>
+            {letter.message}
+          </p>
+        </div>
+        <div style={{
+          padding: '12px 22px 18px',
+          borderTop: `1.5px solid ${m.pill}`, background: m.bg,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: '50%',
+            background: `linear-gradient(135deg, ${m.soft}, ${m.color})`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17,
+          }}>
+            {letter.isAnonymous ? '🎭' : '💌'}
+          </div>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 800, color: '#3D1025' }}>
+              {letter.isAnonymous ? '익명의 친구' : letter.from}
+            </p>
+            <p style={{ fontSize: 10, color: '#C0A0C0', fontWeight: 500 }}>
+              {letter.isAnonymous ? '소중한 마음을 담아 보냈어요 💕' : '이름을 남겨주었어요 ✉️'}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LOCK SCREEN (비밀번호 인증)
+═══════════════════════════════════════════════════════════ */
+function LockScreen({ user, onUnlock }: { user: UserData; onUnlock: () => void }) {
+  const [pw, setPw] = useState('')
+  const [error, setError] = useState('')
+  const [shaking, setShaking] = useState(false)
+  const [showPw, setShowPw] = useState(false)
+
+  const attempt = () => {
+    if (pw === user.password) {
+      setAuthed(user.id)
+      onUnlock()
+    } else {
+      setError('비밀번호가 맞지 않아요')
+      setShaking(true)
+      setPw('')
+      setTimeout(() => { setShaking(false); setError('') }, 600)
+    }
+  }
+
+  return (
+    <div style={{
+      minHeight: '100dvh',
+      background: 'linear-gradient(160deg, #FFF0F6 0%, #F8F0FF 100%)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: '32px 28px', gap: 28,
+      animation: 'fadeIn 0.35s ease forwards',
+    }}>
+      {/* Back to landing */}
+      <div style={{ position: 'absolute', top: 52, left: 20 }}>
+        <BackBtn onClick={() => go('/')} />
+      </div>
+
+      {/* Icon */}
+      <div style={{
+        width: 88, height: 88, borderRadius: '50%',
+        background: 'linear-gradient(135deg, #FFD0E8, #C4B5FD)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 40, boxShadow: '0 10px 36px rgba(167,139,250,0.3)',
+        animation: 'floatY 3s ease-in-out infinite',
+      }}>🔒</div>
+
+      <div style={{ textAlign: 'center' }}>
+        <h2 style={{ fontSize: 21, fontWeight: 800, color: '#2D1020', marginBottom: 8, letterSpacing: -0.3 }}>
+          {user.nickname}님의 편지함
+        </h2>
+        <p style={{ fontSize: 13, color: '#C09AB0', lineHeight: 1.8, fontWeight: 500 }}>
+          소중한 편지를 보호하고 있어요.<br />비밀번호를 입력해 편지함을 열어보세요.
+        </p>
+      </div>
+
+      {/* Password dots preview */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: -10 }}>
+        {Array.from({ length: Math.max(4, user.password.length) }).map((_, i) => (
+          <div key={i} style={{
+            width: 12, height: 12, borderRadius: '50%',
+            background: i < pw.length ? '#FF6B9D' : '#FFD0E8',
+            transition: 'background 0.2s ease',
+          }} />
+        ))}
+      </div>
+
+      {/* Input */}
+      <div style={{ width: '100%', position: 'relative' }}
+        className={shaking ? 'shake' : ''}>
+        <input
+          type={showPw ? 'text' : 'password'}
+          value={pw}
+          onChange={e => { setPw(e.target.value); setError('') }}
+          onKeyDown={e => e.key === 'Enter' && attempt()}
+          placeholder="비밀번호 입력"
+          autoComplete="off"
+          style={{
+            width: '100%', padding: '16px 52px 16px 18px',
+            background: '#fff',
+            border: `2px solid ${error ? '#FF6B9D' : '#FFD0E8'}`,
+            borderRadius: 18, fontSize: 16,
+            color: '#2D1020', outline: 'none',
+            boxShadow: error ? '0 0 0 4px #FF6B9D18' : '0 4px 16px rgba(255,107,157,0.1)',
+            transition: 'all 0.2s',
+            textAlign: 'center', letterSpacing: showPw ? 0.5 : 4,
+            fontWeight: 600,
+          }}
+        />
+        <button
+          onClick={() => setShowPw(v => !v)}
+          style={{
+            position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+            background: 'none', fontSize: 18, color: '#C0A8C0',
+          }}
+        >{showPw ? '🙈' : '👁️'}</button>
+        {error && (
+          <p style={{
+            textAlign: 'center', color: '#FF6B9D', fontSize: 12,
+            marginTop: 8, fontWeight: 700,
+          }}>{error}</p>
+        )}
+      </div>
+
+      <button
+        onClick={attempt}
+        disabled={!pw}
+        style={{
+          width: '100%', padding: '16px',
+          background: pw ? 'linear-gradient(135deg, #FF85AD, #FF6B9D)' : '#F0E0E8',
+          borderRadius: 20, fontSize: 16, fontWeight: 800,
+          color: pw ? '#fff' : '#C8A8C0',
+          boxShadow: pw ? '0 6px 26px rgba(255,107,157,0.4)' : 'none',
+          transition: 'all 0.3s ease',
+        }}
+        onPointerDown={e => pw && (e.currentTarget.style.transform = 'scale(0.97)')}
+        onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+      >
+        🌸 편지함 열기
+      </button>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SCREEN 1 — LANDING  (/)
+═══════════════════════════════════════════════════════════ */
+function LandingScreen() {
+  const myId = getMyUserId()
+
+  return (
+    <div style={{
+      minHeight: '100dvh',
+      background: 'linear-gradient(180deg, #FFF5F7 0%, #FFF0FA 42%, #F5EEFF 100%)',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', position: 'relative', overflow: 'hidden',
+    }}>
+      {/* Bg blobs */}
+      <div style={{
+        position: 'absolute', width: 280, height: 280, borderRadius: '50%',
+        background: 'radial-gradient(circle, #FFD0E840, transparent)',
+        top: -60, right: -80, pointerEvents: 'none',
+      }} />
+      <div style={{
+        position: 'absolute', width: 200, height: 200, borderRadius: '50%',
+        background: 'radial-gradient(circle, #E8D8FF40, transparent)',
+        bottom: 100, left: -60, pointerEvents: 'none',
+      }} />
+
+      {/* Logo pill */}
+      <div style={{
+        marginTop: 60, marginBottom: 4,
+        display: 'flex', alignItems: 'center', gap: 8,
+        background: 'rgba(255,255,255,0.75)', backdropFilter: 'blur(12px)',
+        padding: '8px 18px', borderRadius: 99,
+        border: '1.5px solid rgba(255,179,204,0.5)',
+        boxShadow: '0 2px 14px rgba(255,107,157,0.14)',
+        animation: 'fadeUp 0.6s ease forwards',
+      }}>
+        <span style={{ fontSize: 18, animation: 'floatY 2.5s ease-in-out infinite' }}>🌸</span>
+        <span style={{ fontSize: 15, fontWeight: 800, color: '#CC3D6B', letterSpacing: -0.3 }}>벚꽃편지함</span>
+      </div>
+
+      {/* Tree preview */}
+      <div style={{
+        width: '88%', maxWidth: 340,
+        animation: 'fadeUp 0.6s 0.1s ease backwards',
+      }}>
+        <CherryTree letterCount={7} />
+      </div>
+
+      {/* Copy */}
+      <div style={{
+        padding: '0 28px 0',
+        textAlign: 'center',
+        animation: 'fadeUp 0.6s 0.18s ease backwards',
+      }}>
+        <h1 style={{
+          fontSize: 22, fontWeight: 900, color: '#2D1020',
+          letterSpacing: -0.6, lineHeight: 1.35, marginBottom: 12,
+        }}>
+          소중한 진심 한 통에 하나씩,<br />{' '}
+          <span style={{
+            background: 'linear-gradient(135deg, #FF6B9D, #A78BFA)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+          }}>우리만의 봄이 피어납니다</span>
+        </h1>
+        <p style={{ fontSize: 13, color: '#A888A8', lineHeight: 1.85, fontWeight: 500 }}>
+          친구에게 평소 전하지 못한 따뜻한 마음을<br />
+          벚꽃 편지에 익명으로 담아 나무를 키워보세요.
+        </p>
+      </div>
+
+      {/* CTAs */}
+      <div style={{
+        width: '100%', padding: '22px 24px 44px',
+        display: 'flex', flexDirection: 'column', gap: 10,
+        animation: 'fadeUp 0.6s 0.26s ease backwards',
+      }}>
+        <button onClick={() => go('/create')} style={{
+          width: '100%', padding: '17px',
+          background: 'linear-gradient(135deg, #FF85AD, #FF6B9D)',
+          borderRadius: 22, fontSize: 16, fontWeight: 800, color: '#fff',
+          boxShadow: '0 6px 28px rgba(255,107,157,0.44)',
+          animation: 'heartbeat 2.5s 1s ease-in-out infinite',
+          letterSpacing: 0.3,
+        }}
+          onPointerDown={e => (e.currentTarget.style.transform = 'scale(0.97)')}
+          onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+        >
+          🌱 나만의 봄 편지함 만들기
+        </button>
+        {myId && (
+          <button onClick={() => go(`/box/${myId}`)} style={{
+            width: '100%', padding: '14px',
+            background: 'rgba(255,255,255,0.72)',
+            border: '1.5px solid rgba(255,179,204,0.5)',
+            borderRadius: 18, fontSize: 14, fontWeight: 700, color: '#CC3D6B',
+            backdropFilter: 'blur(8px)',
+          }}>
+            🌸 내 편지함으로 →
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SCREEN 2 — CREATE  (/create)
+═══════════════════════════════════════════════════════════ */
+function CreateScreen() {
+  const [nickname, setNickname] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
+  const [errors, setErrors] = useState({ nickname: '', password: '' })
+
+  const validate = () => {
+    const e = { nickname: '', password: '' }
+    if (!nickname.trim()) e.nickname = '이름을 입력해주세요 🌱'
+    else if (nickname.trim().length > 12) e.nickname = '12자 이내로 입력해주세요'
+    if (!password) e.password = '비밀번호를 설정해주세요 🔒'
+    else if (password.length < 4) e.password = '4자 이상 입력해주세요'
+    setErrors(e)
+    return !e.nickname && !e.password
+  }
+
+  const handleCreate = () => {
+    if (!validate()) return
+    const user = createUser(nickname.trim(), password)
+    setAuthed(user.id) // 생성자는 자동 인증
+    go(`/box/${user.id}`)
+  }
+
+  const canSubmit = nickname.trim().length > 0 && password.length >= 4
+
+  return (
+    <div style={{
+      minHeight: '100dvh',
+      background: 'linear-gradient(180deg, #FFFDF9 0%, #FFF5F0 100%)',
+      display: 'flex', flexDirection: 'column',
+    }} className="screen-enter">
+      {/* Header */}
+      <div style={{
+        padding: '52px 20px 16px',
+        display: 'flex', alignItems: 'center', gap: 12,
+        background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)',
+        borderBottom: '1.5px solid #FFE0EC',
+      }}>
+        <BackBtn onClick={() => go('/')} />
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: '#2D1020' }}>편지함 만들기</h2>
+          <p style={{ fontSize: 11, color: '#C09AB0', marginTop: 2, fontWeight: 500 }}>
+            나만의 벚꽃나무를 시작해요
+          </p>
+        </div>
+      </div>
+
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', padding: '36px 28px 28px', gap: 22, overflowY: 'auto',
+      }}>
+        {/* Icon */}
+        <div style={{
+          width: 90, height: 90, borderRadius: '50%',
+          background: 'linear-gradient(135deg, #FFD0E8, #FFB3CC)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 44, boxShadow: '0 8px 32px rgba(255,107,157,0.26)',
+          animation: 'floatY 2.5s ease-in-out infinite',
+        }}>🌱</div>
+
+        <div style={{ textAlign: 'center' }}>
+          <h2 style={{ fontSize: 21, fontWeight: 800, color: '#2D1020', marginBottom: 8 }}>
+            나만의 봄 편지함을<br />시작해볼까요?
+          </h2>
+          <p style={{ fontSize: 13, color: '#C09AB0', lineHeight: 1.8, fontWeight: 500 }}>
+            친구들이 편지를 보낼 때<br />
+            이 이름으로 표시돼요
+          </p>
+        </div>
+
+        {/* Nickname */}
+        <div style={{ width: '100%' }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 8, letterSpacing: 0.6 }}>
+            👤 닉네임
+          </p>
+          <input
+            value={nickname}
+            onChange={e => { setNickname(e.target.value); setErrors(p => ({ ...p, nickname: '' })) }}
+            onKeyDown={e => e.key === 'Enter' && handleCreate()}
+            placeholder="닉네임 또는 이름 (최대 12자)"
+            maxLength={12}
+            autoFocus
+            style={{
+              width: '100%', padding: '15px 18px',
+              background: '#fff',
+              border: `2px solid ${errors.nickname ? '#FF6B9D' : '#FFD0E8'}`,
+              borderRadius: 16, fontSize: 15,
+              color: '#2D1020', outline: 'none',
+              boxShadow: errors.nickname ? '0 0 0 4px #FF6B9D14' : '0 4px 14px rgba(255,107,157,0.08)',
+              transition: 'all 0.2s', fontWeight: 600, textAlign: 'center',
+            }}
+          />
+          {errors.nickname && (
+            <p style={{ color: '#FF6B9D', fontSize: 11, marginTop: 6, fontWeight: 600, textAlign: 'center' }}>
+              {errors.nickname}
+            </p>
+          )}
+        </div>
+
+        {/* Password */}
+        <div style={{ width: '100%' }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 8, letterSpacing: 0.6 }}>
+            🔒 비밀번호 (4자 이상)
+          </p>
+          <div style={{ position: 'relative' }}>
+            <input
+              type={showPw ? 'text' : 'password'}
+              value={password}
+              onChange={e => { setPassword(e.target.value); setErrors(p => ({ ...p, password: '' })) }}
+              onKeyDown={e => e.key === 'Enter' && handleCreate()}
+              placeholder="편지함 비밀번호"
+              autoComplete="new-password"
+              style={{
+                width: '100%', padding: '15px 50px 15px 18px',
+                background: '#fff',
+                border: `2px solid ${errors.password ? '#FF6B9D' : '#FFD0E8'}`,
+                borderRadius: 16, fontSize: 15,
+                color: '#2D1020', outline: 'none',
+                boxShadow: errors.password ? '0 0 0 4px #FF6B9D14' : '0 4px 14px rgba(255,107,157,0.08)',
+                transition: 'all 0.2s', fontWeight: 600, textAlign: 'center',
+                letterSpacing: showPw ? 0.5 : 4,
+              }}
+            />
+            <button onClick={() => setShowPw(v => !v)} style={{
+              position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', fontSize: 18, color: '#C0A8C0',
+            }}>{showPw ? '🙈' : '👁️'}</button>
+          </div>
+          {errors.password && (
+            <p style={{ color: '#FF6B9D', fontSize: 11, marginTop: 6, fontWeight: 600, textAlign: 'center' }}>
+              {errors.password}
+            </p>
+          )}
+
+          {/* 경고 문구 */}
+          <div style={{
+            marginTop: 10, padding: '11px 14px',
+            background: '#FFF8E8',
+            border: '1.5px solid #FFDC80',
+            borderRadius: 14,
+            display: 'flex', alignItems: 'flex-start', gap: 8,
+          }}>
+            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>📝</span>
+            <p style={{ fontSize: 11, color: '#A08020', lineHeight: 1.7, fontWeight: 600 }}>
+              비밀번호를 메모장에 꼭 적어두세요.<br />
+              <span style={{ fontWeight: 800, color: '#C06010' }}>비밀번호를 모르면 편지를 열어볼 수 없어요.</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Type hint pills */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {['칭찬 ✨', '응원 🔥', '감사 🌸'].map(t => (
+            <span key={t} style={{
+              fontSize: 11, fontWeight: 600, color: '#D0A8C0',
+              background: '#FFF0F6', padding: '4px 12px', borderRadius: 99,
+              border: '1px solid #FFD0E8',
+            }}>{t}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* CTA */}
+      <div style={{ padding: '12px 24px 44px', borderTop: '1px solid #FFE8F2' }}>
+        <button onClick={handleCreate} disabled={!canSubmit} style={{
+          width: '100%', padding: '17px',
+          background: canSubmit ? 'linear-gradient(135deg, #FF85AD, #FF6B9D)' : '#F0E0E8',
+          borderRadius: 22, fontSize: 16, fontWeight: 800,
+          color: canSubmit ? '#fff' : '#C8A8C0',
+          boxShadow: canSubmit ? '0 6px 26px rgba(255,107,157,0.42)' : 'none',
+          transition: 'all 0.3s ease',
+        }}
+          onPointerDown={e => canSubmit && (e.currentTarget.style.transform = 'scale(0.97)')}
+          onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+        >
+          🌸 봄 편지함 만들기
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SCREEN 3 — DASHBOARD  (/box/:userId)
+═══════════════════════════════════════════════════════════ */
+function DashboardScreen({ userId }: { userId: string }) {
+  const [user, setUser] = useState<UserData | null>(() => getUser(userId))
+  const [authed, setAuthedState] = useState(() => isAuthed(userId))
+  const [selectedLetter, setSelectedLetter] = useState<Letter | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    const t = setInterval(() => setUser(getUser(userId)), 3000)
+    return () => clearInterval(t)
+  }, [userId])
+
+  if (!user) {
+    return (
+      <div style={{
+        minHeight: '100dvh', background: '#FFF5F9',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 16, padding: 32,
+      }}>
+        <span style={{ fontSize: 48 }}>🌱</span>
+        <p style={{ fontSize: 16, color: '#C09AB0', fontWeight: 600, textAlign: 'center', lineHeight: 1.7 }}>
+          편지함을 찾을 수 없어요<br />
+          <span style={{ fontSize: 13, fontWeight: 400 }}>링크를 다시 확인해주세요</span>
+        </p>
+        <button onClick={() => go('/')} style={{
+          padding: '12px 28px', background: '#FFE0EE',
+          borderRadius: 18, fontSize: 14, fontWeight: 700, color: '#FF6B9D',
+        }}>홈으로</button>
+      </div>
+    )
+  }
+
+  // 인증 전: Lock Screen
+  if (!authed) {
+    return (
+      <LockScreen
+        user={user}
+        onUnlock={() => setAuthedState(true)}
+      />
+    )
+  }
+
+  // 인증 후: 대시보드
+  const stage = getStage(user.letters.length)
+  const conf = STAGE_CONF[stage]
+  const shareUrl = `${window.location.origin}${window.location.pathname}#/write/${userId}`
+  const nextThreshold = [0, 1, 3, 5, 999][Math.min(stage + 1, 4)]
+  const remaining = Math.max(0, nextThreshold - user.letters.length)
+
+  const handleCopy = async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `${user.nickname}님의 벚꽃편지함`, url: shareUrl })
+      } else {
+        await navigator.clipboard.writeText(shareUrl)
+        setCopied(true); setTimeout(() => setCopied(false), 2200)
+      }
+    } catch {
+      try {
+        await navigator.clipboard.writeText(shareUrl)
+        setCopied(true); setTimeout(() => setCopied(false), 2200)
+      } catch {}
+    }
+  }
+
+  return (
+    <div style={{
+      minHeight: '100dvh',
+      background: `linear-gradient(180deg, ${conf.skyA} 0%, ${conf.skyB} 50%, ${conf.bodyBg} 100%)`,
+      display: 'flex', flexDirection: 'column',
+      transition: 'background 1.6s ease',
+      position: 'relative', overflow: 'hidden',
+    }}>
+      {stage === 3 && <FallingPetals />}
+
+      {/* Top bar */}
+      <div style={{
+        padding: '52px 18px 12px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        position: 'relative', zIndex: 20,
+        animation: 'fadeUp 0.6s ease forwards',
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(12px)',
+          padding: '8px 14px', borderRadius: 99,
+          border: '1.5px solid rgba(255,179,204,0.5)',
+          boxShadow: '0 2px 14px rgba(255,107,157,0.14)',
+        }}>
+          <span style={{ fontSize: 16, animation: 'floatY 2.5s ease-in-out infinite' }}>🌸</span>
+          <span style={{ fontSize: 14, fontWeight: 800, color: '#CC3D6B' }}>{user.nickname}님의 나무</span>
+        </div>
+
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 5,
+          background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)',
+          padding: '6px 12px', borderRadius: 99,
+          border: '1px solid rgba(255,179,204,0.35)',
+          fontSize: 11, fontWeight: 700, color: '#C0607A',
+        }}>
+          <span>{conf.labelEmoji}</span>
+          <span>{conf.label}</span>
+        </div>
+      </div>
+
+      {/* Tree */}
+      <div style={{ position: 'relative', zIndex: 15, animation: 'fadeUp 0.6s 0.1s ease backwards' }}>
+        <CherryTree letterCount={user.letters.length} />
+      </div>
+
+      {/* Bottom card */}
+      <div style={{
+        margin: '0 14px 22px',
+        background: 'rgba(255,255,255,0.86)', backdropFilter: 'blur(22px)',
+        borderRadius: 30,
+        border: '1.5px solid rgba(255,179,204,0.38)',
+        boxShadow: '0 8px 36px rgba(255,107,157,0.14)',
+        overflow: 'hidden',
+        position: 'relative', zIndex: 20,
+        animation: 'fadeUp 0.6s 0.18s ease backwards',
+      }}>
+        <ShimmerStrip />
+
+        <div style={{ padding: '14px 18px 18px' }}>
+          {/* Progress */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#AAA' }}>피어난 벚꽃</span>
+                <span style={{
+                  fontSize: 13, fontWeight: 800, color: '#FF6B9D',
+                  background: '#FFE0EE', padding: '2px 9px', borderRadius: 99,
+                }}>{user.letters.length}송이 🌸</span>
+              </div>
+              {stage < 3 && remaining > 0 && (
+                <span style={{ fontSize: 11, color: '#C0A8C0', fontWeight: 500 }}>다음 단계까지 {remaining}통</span>
+              )}
+              {stage === 3 && (
+                <span style={{ fontSize: 11, color: '#FF6B9D', fontWeight: 800 }}>🎉 만개!</span>
+              )}
+            </div>
+            <div style={{ height: 8, background: '#FFE8F2', borderRadius: 99, overflow: 'hidden', border: '1px solid rgba(255,179,204,0.28)' }}>
+              <div style={{
+                height: '100%',
+                width: `${stage === 3 ? 100 : Math.min(100, (user.letters.length / 4) * 100)}%`,
+                background: 'linear-gradient(90deg, #FFB3CC, #FF6B9D)',
+                borderRadius: 99, transition: 'width 1s cubic-bezier(0.22,1,0.36,1)',
+              }} />
+            </div>
+          </div>
+
+          {/* Letter grid */}
+          {user.letters.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 8, letterSpacing: 0.5 }}>
+                💌 받은 편지 — 꽃을 눌러보세요
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 7 }}>
+                {user.letters.map((letter, i) => {
+                  const m = TYPE_META[letter.type]
+                  return (
+                    <button key={letter.id} onClick={() => setSelectedLetter(letter)} style={{
+                      aspectRatio: '1',
+                      background: `radial-gradient(circle at 38% 34%, #fff, ${m.bg})`,
+                      border: `2px solid ${m.pill}`,
+                      borderRadius: '50%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      boxShadow: `0 3px 10px ${m.color}25`,
+                      animation: `bloomIn 0.44s ${i * 0.05}s ease backwards`,
+                      transition: 'transform 0.15s',
+                    }}
+                      onPointerDown={e => (e.currentTarget.style.transform = 'scale(0.88)')}
+                      onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+                    >
+                      <span style={{ fontSize: 14 }}>{m.emoji}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Share */}
+          <div style={{
+            background: '#FFF0F6', borderRadius: 18,
+            padding: '12px 14px', border: '1.5px solid #FFD8EE',
+          }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: '#C0607A', marginBottom: 6 }}>
+              🔗 링크를 공유하면 친구들이 편지를 써줄 수 있어요
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{
+                flex: 1, padding: '9px 12px',
+                background: '#fff', borderRadius: 12,
+                border: '1.5px solid #FFD0E8',
+                fontSize: 11, color: '#C0A8C0', fontWeight: 500,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {shareUrl.replace(/https?:\/\//, '')}
+              </div>
+              <button onClick={handleCopy} style={{
+                padding: '9px 14px', borderRadius: 12,
+                background: copied
+                  ? 'linear-gradient(135deg, #7ACC8A, #4DB870)'
+                  : 'linear-gradient(135deg, #FF85AD, #FF6B9D)',
+                color: '#fff', fontSize: 12, fontWeight: 800,
+                boxShadow: '0 3px 14px rgba(255,107,157,0.36)',
+                transition: 'all 0.3s ease', whiteSpace: 'nowrap',
+              }}>
+                {copied ? '✓ 복사됨' : '링크 복사'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {selectedLetter && (
+        <LetterModal letter={selectedLetter} onClose={() => setSelectedLetter(null)} />
+      )}
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SCREEN 4 — WRITE  (/write/:userId)
+═══════════════════════════════════════════════════════════ */
+function WriteScreen({ userId }: { userId: string }) {
+  const [recipient] = useState<UserData | null>(() => getUser(userId))
+  const [type, setType] = useState<LetterType>('감사')
+  const [message, setMessage] = useState('')
+  const [isAnonymous, setIsAnonymous] = useState(true)
+  const [from, setFrom] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const meta = TYPE_META[type]
+
+  if (!recipient) {
+    return (
+      <div style={{
+        minHeight: '100dvh', background: '#FFF5F9',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 16, padding: 32,
+      }}>
+        <span style={{ fontSize: 48 }}>🌱</span>
+        <p style={{ fontSize: 16, color: '#C09AB0', fontWeight: 600, textAlign: 'center', lineHeight: 1.7 }}>
+          편지함을 찾을 수 없어요<br />
+          <span style={{ fontSize: 13, fontWeight: 400 }}>올바른 링크인지 확인해주세요</span>
+        </p>
+      </div>
+    )
+  }
+
+  const handleSubmit = () => {
+    if (!message.trim() || loading) return
+    setLoading(true)
+    const letter: Letter = {
+      id: Date.now().toString(), type,
+      message: message.trim(),
+      from: isAnonymous ? '익명' : (from.trim() || '익명'),
+      isAnonymous,
+      createdAt: `${new Date().getMonth() + 1}.${new Date().getDate()}`,
+    }
+    addLetterToUser(userId, letter)
+    setTimeout(() => { setLoading(false); setSubmitted(true) }, 600)
+  }
+
+  if (submitted) {
+    return (
+      <div style={{
+        minHeight: '100dvh',
+        background: `linear-gradient(160deg, ${meta.bg} 0%, #FFF5F9 100%)`,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 22, padding: '32px 28px',
+        position: 'relative', overflow: 'hidden',
+      }}>
+        {['🌸', '✨', '💕', '🌸', '✨'].map((e, i) => (
+          <span key={i} style={{
+            position: 'absolute', fontSize: 20 + i * 4,
+            left: `${10 + i * 18}%`, top: `${14 + (i % 3) * 22}%`,
+            opacity: 0.4, pointerEvents: 'none',
+            animation: `floatY ${2 + i * 0.4}s ${i * 0.3}s ease-in-out infinite`,
+          }}>{e}</span>
+        ))}
+        <div style={{
+          width: 96, height: 96, borderRadius: '50%',
+          background: `linear-gradient(135deg, ${meta.soft}, ${meta.color})`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 46, boxShadow: `0 14px 44px ${meta.color}44`,
+          animation: 'bloomIn 0.6s ease forwards',
+        }}>{meta.emoji}</div>
+        <div style={{ textAlign: 'center' }}>
+          <h2 style={{ fontSize: 22, color: meta.color, fontWeight: 800, marginBottom: 10 }}>
+            꽃이 피었어요! 🌸
+          </h2>
+          <p style={{ fontSize: 14, color: '#C09AB0', lineHeight: 1.9, fontWeight: 500 }}>
+            소중한 진심 한 통이{' '}
+            <b style={{ color: meta.color }}>{recipient.nickname}</b>님의<br />
+            나무에 꽃으로 피어났습니다
+          </p>
+        </div>
+        <div style={{
+          background: 'rgba(255,255,255,0.82)', backdropFilter: 'blur(12px)',
+          borderRadius: 22, padding: '18px 24px',
+          border: `1.5px solid ${meta.pill}`, maxWidth: 300, textAlign: 'center',
+        }}>
+          <p style={{ fontSize: 13, color: meta.color, fontWeight: 700, marginBottom: 6 }}>
+            당신의 편지로
+          </p>
+          <p style={{ fontSize: 14, color: '#3D1025', fontWeight: 600, lineHeight: 1.8 }}>
+            {recipient.nickname}님의 나무에<br />
+            우리만의 봄이 피어났습니다 🌸
+          </p>
+        </div>
+        <button onClick={() => go('/')} style={{
+          padding: '13px 28px', marginTop: 4,
+          background: `linear-gradient(135deg, ${meta.soft}, ${meta.color})`,
+          borderRadius: 18, fontSize: 14, fontWeight: 700, color: '#fff',
+          boxShadow: `0 4px 18px ${meta.color}38`,
+        }}>
+          나도 봄 편지함 만들기 →
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ minHeight: '100dvh', background: '#FFF5F9', display: 'flex', flexDirection: 'column' }}
+      className="screen-enter">
+      {/* Header */}
+      <div style={{
+        padding: '52px 18px 16px',
+        background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(10px)',
+        borderBottom: '1.5px solid #FFE0EC',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <span style={{ fontSize: 14, animation: 'floatY 2.5s ease-in-out infinite' }}>🌸</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#C09AB0' }}>벚꽃편지함</span>
+        </div>
+        <h2 style={{ fontSize: 19, fontWeight: 900, color: '#2D1020', letterSpacing: -0.3, lineHeight: 1.35 }}>
+          <span style={{
+            background: 'linear-gradient(135deg, #FF6B9D, #A78BFA)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+          }}>{recipient.nickname}</span>님에게<br />
+          평소 전하지 못한 마음을 전해보세요 💌
+        </h2>
+      </div>
+
+      <div style={{ flex: 1, overflow: 'auto', padding: '20px 16px' }}>
+        {/* Type */}
+        <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 10, letterSpacing: 0.8 }}>
+          💭 어떤 마음을 담을까요?
+        </p>
+        <div style={{ display: 'flex', gap: 9, marginBottom: 20 }}>
+          {(['칭찬', '응원', '감사'] as LetterType[]).map(t => {
+            const m = TYPE_META[t]; const active = type === t
+            return (
+              <button key={t} onClick={() => setType(t)} style={{
+                flex: 1, padding: '14px 6px',
+                background: active ? m.bg : '#fff',
+                border: `2px solid ${active ? m.soft : '#F0E0E8'}`,
+                borderRadius: 22,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+                transition: 'all 0.2s ease',
+                boxShadow: active ? `0 4px 18px ${m.color}28` : '0 2px 8px rgba(0,0,0,0.04)',
+                transform: active ? 'scale(1.05)' : 'scale(1)',
+              }}>
+                <span style={{
+                  fontSize: 26, display: 'inline-block',
+                  animation: active ? 'wiggle 1.5s ease-in-out infinite' : 'none',
+                }}>{m.emoji}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: active ? m.color : '#BBA8CC' }}>{t}</span>
+                <span style={{ fontSize: 9, color: active ? m.color + 'BB' : '#CCC0D8', textAlign: 'center', lineHeight: 1.4, fontWeight: 500 }}>
+                  {m.desc}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Message */}
+        <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 10, letterSpacing: 0.8 }}>
+          💌 진심을 담아 써보세요
+        </p>
+        <div style={{
+          background: '#fff', border: `2px solid ${meta.soft}`,
+          borderRadius: 22, overflow: 'hidden', marginBottom: 16,
+          boxShadow: `0 4px 20px ${meta.color}12`,
+          transition: 'border-color 0.3s, box-shadow 0.3s',
+        }}>
+          <textarea
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            placeholder={`${recipient.nickname}님에게 ${['칭찬하고 싶은 점', '힘이 되는 말', '감사한 마음'][['칭찬', '응원', '감사'].indexOf(type)]}을 써주세요...`}
+            maxLength={200}
+            style={{
+              width: '100%', minHeight: 128, padding: '16px',
+              background: 'transparent', border: 'none', outline: 'none', resize: 'none',
+              fontSize: 15, color: '#2D1020', lineHeight: 1.9, fontWeight: 400,
+            }}
+          />
+          <div style={{
+            padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            borderTop: `1.5px solid ${meta.pill}`, background: meta.bg,
+          }}>
+            <span style={{ fontSize: 11, color: meta.color + '88', fontWeight: 600 }}>
+              {message.length > 0 ? '✍️ 작성 중...' : ''}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: message.length > 180 ? '#FF6B9D' : '#C0B0C8' }}>
+              {message.length} / 200
+            </span>
+          </div>
+        </div>
+
+        {/* Sender */}
+        <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 10, letterSpacing: 0.8 }}>
+          👤 보내는 사람
+        </p>
+        <div style={{
+          background: '#fff', border: '2px solid #FFE0EC',
+          borderRadius: 20, overflow: 'hidden', marginBottom: 8,
+          boxShadow: '0 2px 12px rgba(255,107,157,0.08)',
+        }}>
+          <div style={{ display: 'flex' }}>
+            {[{ v: true, label: '🎭 익명으로' }, { v: false, label: '✍️ 이름 남기기' }].map(opt => (
+              <button key={String(opt.v)} onClick={() => setIsAnonymous(opt.v)} style={{
+                flex: 1, padding: '12px 8px',
+                background: isAnonymous === opt.v ? '#FFE8F2' : 'transparent',
+                color: isAnonymous === opt.v ? '#FF6B9D' : '#BBA8CC',
+                fontSize: 13, fontWeight: isAnonymous === opt.v ? 800 : 500,
+                transition: 'all 0.2s',
+              }}>{opt.label}</button>
+            ))}
+          </div>
+          {!isAnonymous && (
+            <input value={from} onChange={e => setFrom(e.target.value)}
+              placeholder="이름 또는 닉네임을 적어주세요"
+              style={{
+                width: '100%', padding: '12px 16px',
+                background: 'transparent', border: 'none',
+                borderTop: '1.5px solid #FFE0EC',
+                outline: 'none', fontSize: 14, color: '#2D1020', fontWeight: 400,
+              }}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Submit */}
+      <div style={{
+        padding: '12px 16px 44px',
+        background: 'rgba(255,245,249,0.96)', backdropFilter: 'blur(8px)',
+        borderTop: '1px solid #FFE8F2',
+      }}>
+        <button onClick={handleSubmit} disabled={!message.trim() || loading} style={{
+          width: '100%', padding: '16px',
+          background: message.trim() ? `linear-gradient(135deg, ${meta.soft}, ${meta.color})` : '#F0E0E8',
+          border: 'none', borderRadius: 20,
+          fontSize: 16, fontWeight: 800,
+          color: message.trim() ? '#fff' : '#C8A8C0',
+          boxShadow: message.trim() ? `0 6px 26px ${meta.color}42` : 'none',
+          transition: 'all 0.3s ease', letterSpacing: 0.3,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        }}
+          onPointerDown={e => message.trim() && (e.currentTarget.style.transform = 'scale(0.97)')}
+          onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+        >
+          {loading
+            ? <span style={{ display: 'inline-block', animation: 'floatY 0.6s ease-in-out infinite' }}>🌸</span>
+            : <>{meta.emoji} {recipient.nickname}님의 나무에 꽃 피우기</>
+          }
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   APP ROOT — hash-based routing
+═══════════════════════════════════════════════════════════ */
+export default function App() {
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash))
+
+  useEffect(() => {
+    const el = document.createElement('style')
+    el.textContent = CSS; document.head.appendChild(el)
+    return () => { document.head.removeChild(el) }
+  }, [])
+
+  useEffect(() => {
+    const handler = () => setRoute(parseRoute(window.location.hash))
+    window.addEventListener('hashchange', handler)
+    return () => window.removeEventListener('hashchange', handler)
+  }, [])
+
+  return (
+    <div className="app-shell">
+      {route.path === 'landing'   && <LandingScreen />}
+      {route.path === 'create'    && <CreateScreen />}
+      {route.path === 'dashboard' && <DashboardScreen key={route.userId} userId={route.userId} />}
+      {route.path === 'write'     && <WriteScreen     key={route.userId} userId={route.userId} />}
+    </div>
+  )
+}
