@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 /* ═══════════════════════════════════════════════════════════
    TYPES
@@ -22,59 +22,153 @@ interface UserData {
 /* ═══════════════════════════════════════════════════════════
    CONSTANTS — FLOWER SPOTS (균등 분포: 나무 전체에 고루)
 ═══════════════════════════════════════════════════════════ */
-//
-//  가지 영역별 그룹으로 나눠 36개 좌표 설계
-//  [A] 최상단 / [B] 상단 중앙 / [C] 상단 좌 / [D] 상단 우
-//  [E] 중간 좌 메인 / [F] 중간 우 메인
-//  [G] 하단 좌 메인 / [H] 하단 우 메인
-//  [I] 좌측 끝 / [J] 우측 끝
-//
 const FLOWER_SPOTS: { x: number; y: number }[] = [
-  // [A] 최상단 가지
-  { x: 193, y: 62 }, { x: 180, y: 72 }, { x: 206, y: 72 },
+  // 1차: 중앙 코어
+  { x: 193, y: 64 },
+  { x: 178, y: 74 },
+  { x: 208, y: 74 },
+  { x: 185, y: 90 },
+  { x: 201, y: 90 },
+  { x: 172, y: 102 },
+  { x: 218, y: 102 },
+  { x: 190, y: 108 },
 
-  // [B] 상단 중앙 갈래
-  { x: 152, y: 108 }, { x: 168, y: 98 }, { x: 185, y: 88 },
-  { x: 201, y: 88 }, { x: 218, y: 98 }, { x: 234, y: 108 },
+  // 2차: 중앙 볼륨 확장
+  { x: 158, y: 118 },
+  { x: 228, y: 118 },
+  { x: 175, y: 122 },
+  { x: 210, y: 122 },
+  { x: 145, y: 132 },
+  { x: 242, y: 132 },
+  { x: 162, y: 138 },
+  { x: 225, y: 138 },
 
-  // [C] 상단 좌 갈래
-  { x: 115, y: 120 }, { x: 130, y: 112 }, { x: 143, y: 124 },
-  { x: 104, y: 132 },
+  // 3차: 좌우 중간층
+  { x: 126, y: 124 },
+  { x: 263, y: 124 },
+  { x: 112, y: 136 },
+  { x: 278, y: 136 },
+  { x: 98, y: 148 },
+  { x: 292, y: 148 },
+  { x: 130, y: 148 },
+  { x: 250, y: 148 },
 
-  // [D] 상단 우 갈래
-  { x: 263, y: 112 }, { x: 250, y: 124 }, { x: 275, y: 120 },
-  { x: 287, y: 132 },
+  // 4차: 아래쪽 빈 공간 보강
+  { x: 146, y: 154 },
+  { x: 190, y: 146 },
+  { x: 234, y: 154 },
+  { x: 116, y: 160 },
+  { x: 264, y: 160 },
+  { x: 84, y: 172 },
+  { x: 306, y: 172 },
 
-  // [E] 중간 좌 메인 가지
-  { x: 96, y: 148 }, { x: 112, y: 140 }, { x: 80, y: 158 },
+  // 5차: 바깥 날개
+  { x: 70, y: 162 },
+  { x: 320, y: 162 },
+  { x: 52, y: 152 },
+  { x: 338, y: 152 },
 
-  // [F] 중간 우 메인 가지
-  { x: 290, y: 140 }, { x: 305, y: 148 }, { x: 316, y: 158 },
+  // 6차: 하단 좌우 가지 보강
+  { x: 118, y: 172 },
+  { x: 138, y: 180 },
+  { x: 158, y: 188 },
 
-  // [G] 하단 좌 메인 가지
-  { x: 65, y: 172 }, { x: 52, y: 182 }, { x: 78, y: 180 },
+  { x: 272, y: 172 },
+  { x: 252, y: 180 },
+  { x: 232, y: 188 },
 
-  // [H] 하단 우 메인 가지
-  { x: 330, y: 172 }, { x: 345, y: 180 }, { x: 317, y: 182 },
+  // 7차: 하단 바깥쪽 끝 보강
+  { x: 88, y: 186 },
+  { x: 72, y: 194 },
+  { x: 302, y: 186 },
+  { x: 318, y: 194 },
 
-  // [I] 좌 끝 가지
-  { x: 38, y: 162 }, { x: 46, y: 154 },
+  // 8차: 줄기 가까운 하단 내부 보강
+  { x: 172, y: 176 },
+  { x: 208, y: 176 },
 
-  // [J] 우 끝 가지
-  { x: 356, y: 162 }, { x: 348, y: 154 },
+  // 하단 살짝 추가
+  { x: 132, y: 186 },
+  { x: 152, y: 194 },
+  { x: 172, y: 188 },
 
-  // 중간 추가 밀도
-  { x: 158, y: 140 }, { x: 228, y: 140 },
-  { x: 175, y: 108 }, { x: 210, y: 108 },
+  { x: 248, y: 186 },
+  { x: 228, y: 194 },
+  { x: 208, y: 188 },
+
+  // 하단 고르게 보강
+  { x: 118, y: 198 },
+  { x: 144, y: 204 },
+  { x: 168, y: 198 },
+  { x: 186, y: 204 },
+
+  { x: 214, y: 204 },
+  { x: 232, y: 198 },
+  { x: 256, y: 204 },
+  { x: 282, y: 198 },
 ]
 
+const FLOWER_GROUPS = {
+  top: FLOWER_SPOTS.filter(p => p.y < 90),
+  upper: FLOWER_SPOTS.filter(p => p.y >= 90 && p.y < 120),
+  mid: FLOWER_SPOTS.filter(p => p.y >= 120 && p.y < 150),
+  lower: FLOWER_SPOTS.filter(p => p.y >= 150 && p.y < 180),
+  bottom: FLOWER_SPOTS.filter(p => p.y >= 180),
+}
+
+function pickBalanced(count: number) {
+  const orderedGroups = [
+    FLOWER_GROUPS.top,
+    FLOWER_GROUPS.upper,
+    FLOWER_GROUPS.mid,
+    FLOWER_GROUPS.upper,
+    FLOWER_GROUPS.mid,
+    FLOWER_GROUPS.lower,
+    FLOWER_GROUPS.mid,
+    FLOWER_GROUPS.upper,
+    FLOWER_GROUPS.lower,
+    FLOWER_GROUPS.bottom,
+  ]
+
+  const result: { x: number; y: number }[] = []
+  const used = new Set<string>()
+  let i = 0
+
+  while (result.length < count) {
+    const group = orderedGroups[i % orderedGroups.length]
+
+    if (group.length > 0) {
+      const idx = Math.floor(i / orderedGroups.length) % group.length
+      const spot = group[idx]
+      const key = `${spot.x}-${spot.y}`
+
+      if (!used.has(key)) {
+        result.push(spot)
+        used.add(key)
+      }
+    }
+
+    i++
+    if (i > 1000) break
+  }
+
+  return result
+}
+function shuffleSpots<T>(arr: T[]) {
+  const copy = [...arr]
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor((Math.sin(i * 999) * 10000 % 1 + 1) % 1 * (i + 1))
+      ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy
+}
 const LEAF_SPOTS = [
   { x: 148, y: 130, a: -22 }, { x: 170, y: 150, a: 18 },
-  { x: 220, y: 130, a: 22 },  { x: 206, y: 150, a: -18 },
+  { x: 220, y: 130, a: 22 }, { x: 206, y: 150, a: -18 },
   { x: 100, y: 150, a: -30 }, { x: 83, y: 172, a: 26 },
-  { x: 300, y: 150, a: 30 },  { x: 316, y: 172, a: -26 },
+  { x: 300, y: 150, a: 30 }, { x: 316, y: 172, a: -26 },
   { x: 176, y: 112, a: -12 }, { x: 210, y: 112, a: 12 },
-  { x: 62, y: 186, a: -20 },  { x: 342, y: 186, a: 20 },
+  { x: 62, y: 186, a: -20 }, { x: 342, y: 186, a: 20 },
 ]
 
 const TYPE_META: Record<LetterType, {
@@ -158,7 +252,7 @@ function setAuthed(userId: string) {
   try {
     const s = JSON.parse(sessionStorage.getItem(SESSION_KEY) || '{}')
     s[userId] = true; sessionStorage.setItem(SESSION_KEY, JSON.stringify(s))
-  } catch {}
+  } catch { }
 }
 
 function getStage(count: number): Stage {
@@ -199,7 +293,8 @@ const CSS = `
     min-height: 100dvh;
     margin: 0 auto;
     position: relative;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   @keyframes petalFall {
@@ -368,6 +463,7 @@ function CherryTree({ letterCount }: { letterCount: number }) {
   const stage = getStage(letterCount)
   const conf = STAGE_CONF[stage]
   const visibleCount = Math.min(letterCount, FLOWER_SPOTS.length)
+  const balancedSpots = pickBalanced(visibleCount)
 
   return (
     <svg viewBox="0 0 390 400" xmlns="http://www.w3.org/2000/svg"
@@ -466,28 +562,30 @@ function CherryTree({ letterCount }: { letterCount: number }) {
         ))}
 
         {/* Flowers — stage 0: placeholder dots, stage 1+: full 5-petal flowers */}
-        {FLOWER_SPOTS.map((spot, i) => {
-          const isVisible = i < visibleCount
-
-          if (!isVisible) {
-            // 배치 힌트 점 (stage 0에서만 아주 연하게)
-            return stage === 0
-              ? <circle key={i} cx={spot.x} cy={spot.y} r={2.5} fill="#C8C0C4" opacity={0.15} />
-              : null
-          }
-
-          // 5장 꽃잎 — 가장 최근 꽃은 bloomIn 애니메이션
-          const isNewest = i === letterCount - 1
-          return (
-            <Flower
+        {stage === 0
+          ? FLOWER_SPOTS.map((spot, i) => (
+            <circle
               key={i}
-              x={spot.x} y={spot.y}
-              stage={stage}
-              flowerScale={conf.flowerScale}
-              delayMs={isNewest ? 0 : 0}
+              cx={spot.x}
+              cy={spot.y}
+              r={2.5}
+              fill="#C8C0C4"
+              opacity={0.15}
             />
-          )
-        })}
+          ))
+          : balancedSpots.map((spot, i) => {
+            const isNewest = i === balancedSpots.length - 1
+            return (
+              <Flower
+                key={i}
+                x={spot.x}
+                y={spot.y}
+                stage={stage}
+                flowerScale={conf.flowerScale}
+                delayMs={isNewest ? 0 : 0}
+              />
+            )
+          })}
 
         {/* Tiny birds (stage 3) */}
         {stage === 3 && (
@@ -778,7 +876,7 @@ function LandingScreen() {
         width: '88%', maxWidth: 340,
         animation: 'fadeUp 0.6s 0.1s ease backwards',
       }}>
-        <CherryTree letterCount={7} />
+        <CherryTree letterCount={26} />
       </div>
 
       {/* Copy */}
@@ -1086,7 +1184,7 @@ function DashboardScreen({ userId }: { userId: string }) {
       try {
         await navigator.clipboard.writeText(shareUrl)
         setCopied(true); setTimeout(() => setCopied(false), 2200)
-      } catch {}
+      } catch { }
     }
   }
 
@@ -1265,8 +1363,8 @@ function WriteScreen({ userId }: { userId: string }) {
     return (
       <div style={{
         minHeight: '100dvh', background: '#FFF5F9',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        gap: 16, padding: 32,
+        display: 'flex', flexDirection: 'column', justifyContent: 'center',
+        gap: 16, padding: '20px 20px 28px', position: 'relative', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch',
       }}>
         <span style={{ fontSize: 48 }}>🌱</span>
         <p style={{ fontSize: 16, color: '#C09AB0', fontWeight: 600, textAlign: 'center', lineHeight: 1.7 }}>
@@ -1474,26 +1572,46 @@ function WriteScreen({ userId }: { userId: string }) {
 
       {/* Submit */}
       <div style={{
-        padding: '12px 16px 44px',
-        background: 'rgba(255,245,249,0.96)', backdropFilter: 'blur(8px)',
+        position: 'sticky',
+        bottom: 0,
+        paddingTop: 12,
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)',
+        background: `linear-gradient(to top, rgba(255,245,249,0.96) 78%, rgba(255,255,255,0))`,
+        backdropFilter: 'blur(8px)',
         borderTop: '1px solid #FFE8F2',
       }}>
-        <button onClick={handleSubmit} disabled={!message.trim() || loading} style={{
-          width: '100%', padding: '16px',
-          background: message.trim() ? `linear-gradient(135deg, ${meta.soft}, ${meta.color})` : '#F0E0E8',
-          border: 'none', borderRadius: 20,
-          fontSize: 16, fontWeight: 800,
-          color: message.trim() ? '#fff' : '#C8A8C0',
-          boxShadow: message.trim() ? `0 6px 26px ${meta.color}42` : 'none',
-          transition: 'all 0.3s ease', letterSpacing: 0.3,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-        }}
+        <button
+          onClick={handleSubmit}
+          disabled={!message.trim() || loading}
+          style={{
+            width: '100%',
+            minHeight: 54,
+            padding: '14px 16px',
+            background: message.trim()
+              ? `linear-gradient(135deg, ${meta.soft}, ${meta.color})`
+              : '#F0E0E8',
+            border: 'none',
+            borderRadius: 20,
+            fontSize: 14,
+            fontWeight: 800,
+            color: message.trim() ? '#fff' : '#C8A8C0',
+            boxShadow: message.trim() ? `0 6px 26px ${meta.color}42` : 'none',
+            transition: 'all 0.3s ease',
+            letterSpacing: 0.2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            whiteSpace: 'normal',
+            textAlign: 'center',
+            lineHeight: 1.4,
+          }}
           onPointerDown={e => message.trim() && (e.currentTarget.style.transform = 'scale(0.97)')}
           onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
         >
           {loading
             ? <span style={{ display: 'inline-block', animation: 'floatY 0.6s ease-in-out infinite' }}>🌸</span>
-            : <>{meta.emoji} {recipient.nickname}님의 나무에 꽃 피우기</>
+            : <>{meta.emoji} {recipient.nickname}님께 꽃 보내기</>
           }
         </button>
       </div>
@@ -1521,10 +1639,10 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      {route.path === 'landing'   && <LandingScreen />}
-      {route.path === 'create'    && <CreateScreen />}
+      {route.path === 'landing' && <LandingScreen />}
+      {route.path === 'create' && <CreateScreen />}
       {route.path === 'dashboard' && <DashboardScreen key={route.userId} userId={route.userId} />}
-      {route.path === 'write'     && <WriteScreen     key={route.userId} userId={route.userId} />}
+      {route.path === 'write' && <WriteScreen key={route.userId} userId={route.userId} />}
     </div>
   )
 }
