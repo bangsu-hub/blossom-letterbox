@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 
 /* ═══════════════════════════════════════════════════════════
    TYPES
@@ -154,14 +154,7 @@ function pickBalanced(count: number) {
 
   return result
 }
-function shuffleSpots<T>(arr: T[]) {
-  const copy = [...arr]
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor((Math.sin(i * 999) * 10000 % 1 + 1) % 1 * (i + 1))
-      ;[copy[i], copy[j]] = [copy[j], copy[i]]
-  }
-  return copy
-}
+
 const LEAF_SPOTS = [
   { x: 148, y: 130, a: -22 }, { x: 170, y: 150, a: 18 },
   { x: 220, y: 130, a: 22 }, { x: 206, y: 150, a: -18 },
