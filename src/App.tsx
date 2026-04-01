@@ -1037,7 +1037,7 @@ function CreateScreen() {
         {/* Password */}
         <div style={{ width: '100%' }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 8, letterSpacing: 0.6 }}>
-            🔒 비밀번호 (4자 이상)
+            🔒 비밀번호 (6자 이상)
           </p>
           <div style={{ position: 'relative' }}>
             <input
