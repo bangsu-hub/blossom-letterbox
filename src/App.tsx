@@ -1587,9 +1587,20 @@ function WriteScreen({ userId }: { userId: string }) {
         background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(10px)',
         borderBottom: '1.5px solid #FFE0EC',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-          <span style={{ fontSize: 14, animation: 'floatY 2.5s ease-in-out infinite' }}>🌸</span>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#C09AB0' }}>벚꽃편지함</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 14, animation: 'floatY 2.5s ease-in-out infinite' }}>🌸</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#C09AB0' }}>벚꽃편지함</span>
+          </div>
+          <button onClick={() => go('/create')} style={{
+            padding: '6px 12px',
+            background: 'linear-gradient(135deg, #FF85AD, #FF6B9D)',
+            borderRadius: 20, fontSize: 11, fontWeight: 700, color: '#fff',
+            boxShadow: '0 3px 10px rgba(255,107,157,0.35)',
+            whiteSpace: 'nowrap',
+          }}>
+            🌱 나도 편지함 만들기
+          </button>
         </div>
         <h2 style={{ fontSize: 19, fontWeight: 900, color: '#2D1020', letterSpacing: -0.3, lineHeight: 1.35 }}>
           <span style={{
