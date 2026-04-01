@@ -1142,6 +1142,20 @@ function DashboardScreen({ userId }: { userId: string }) {
   const [pageLoading, setPageLoading] = useState(true)
   const [selectedLetter, setSelectedLetter] = useState<Letter | null>(null)
   const [copied, setCopied] = useState(false)
+  const [readIds, setReadIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(`read-${userId}`)
+      return new Set(stored ? JSON.parse(stored) : [])
+    } catch { return new Set() }
+  })
+
+  const markRead = (id: string) => {
+    setReadIds(prev => {
+      const next = new Set(prev).add(id)
+      localStorage.setItem(`read-${userId}`, JSON.stringify([...next]))
+      return next
+    })
+  }
 
   // 초기 로드: 박스 메타 + 세션 오너십 확인
   useEffect(() => {
@@ -1358,27 +1372,37 @@ function DashboardScreen({ userId }: { userId: string }) {
           {/* Letter grid */}
           {box.letters.length > 0 && (
             <div style={{ marginBottom: 14 }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 8, letterSpacing: 0.5 }}>
-                💌 받은 편지 — 꽃을 눌러보세요
-              </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', letterSpacing: 0.5 }}>
+                  💌 받은 편지 — 꽃을 눌러보세요
+                </p>
+                <p style={{ fontSize: 10, fontWeight: 600, color: '#C0A0C0' }}>
+                  {readIds.size}/{box.letters.length} 읽음
+                </p>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 7 }}>
                 {box.letters.map((letter, i) => {
                   const m = TYPE_META[letter.type]
+                  const isRead = readIds.has(letter.id)
                   return (
-                    <button key={letter.id} onClick={() => setSelectedLetter(letter)} style={{
+                    <button key={letter.id} onClick={() => { setSelectedLetter(letter); markRead(letter.id) }} style={{
                       aspectRatio: '1',
-                      background: `radial-gradient(circle at 38% 34%, #fff, ${m.bg})`,
-                      border: `2px solid ${m.pill}`,
+                      background: isRead
+                        ? `radial-gradient(circle at 38% 34%, #f5f5f5, #ede8f0)`
+                        : `radial-gradient(circle at 38% 34%, #fff, ${m.bg})`,
+                      border: `2px solid ${isRead ? '#D8CDE0' : m.pill}`,
                       borderRadius: '50%',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      boxShadow: `0 3px 10px ${m.color}25`,
+                      boxShadow: isRead ? 'none' : `0 3px 10px ${m.color}25`,
                       animation: `bloomIn 0.44s ${i * 0.05}s ease backwards`,
                       transition: 'transform 0.15s',
+                      opacity: isRead ? 0.55 : 1,
+                      position: 'relative',
                     }}
                       onPointerDown={e => (e.currentTarget.style.transform = 'scale(0.88)')}
                       onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
                     >
-                      <span style={{ fontSize: 14 }}>{m.emoji}</span>
+                      <span style={{ fontSize: 14 }}>{isRead ? '✓' : m.emoji}</span>
                     </button>
                   )
                 })}
