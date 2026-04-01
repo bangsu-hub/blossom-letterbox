@@ -1587,7 +1587,7 @@ function WriteScreen({ userId }: { userId: string }) {
       className="screen-enter">
       {/* Header */}
       <div style={{
-        padding: '52px 18px 16px',
+        padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 18px 12px',
         background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(10px)',
         borderBottom: '1.5px solid #FFE0EC',
       }}>
@@ -1604,17 +1604,17 @@ function WriteScreen({ userId }: { userId: string }) {
         </h2>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '20px 16px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '14px 16px' }}>
         {/* Type */}
-        <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 10, letterSpacing: 0.8 }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 8, letterSpacing: 0.8 }}>
           💭 어떤 마음을 담을까요?
         </p>
-        <div style={{ display: 'flex', gap: 9, marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 9, marginBottom: 14 }}>
           {(['칭찬', '응원', '감사'] as LetterType[]).map(t => {
             const m = TYPE_META[t]; const active = type === t
             return (
               <button key={t} onClick={() => setType(t)} style={{
-                flex: 1, padding: '14px 6px',
+                flex: 1, padding: '10px 6px',
                 background: active ? m.bg : '#fff',
                 border: `2px solid ${active ? m.soft : '#F0E0E8'}`,
                 borderRadius: 22,
@@ -1637,12 +1637,12 @@ function WriteScreen({ userId }: { userId: string }) {
         </div>
 
         {/* Message */}
-        <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 10, letterSpacing: 0.8 }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 8, letterSpacing: 0.8 }}>
           💌 진심을 담아 써보세요
         </p>
         <div style={{
           background: '#fff', border: `2px solid ${meta.soft}`,
-          borderRadius: 22, overflow: 'hidden', marginBottom: 16,
+          borderRadius: 22, overflow: 'hidden', marginBottom: 12,
           boxShadow: `0 4px 20px ${meta.color}12`,
           transition: 'border-color 0.3s, box-shadow 0.3s',
         }}>
@@ -1652,7 +1652,7 @@ function WriteScreen({ userId }: { userId: string }) {
             placeholder={`${box.nickname}님에게 ${['칭찬하고 싶은 점', '힘이 되는 말', '감사한 마음'][['칭찬', '응원', '감사'].indexOf(type)]}을 써주세요...`}
             maxLength={200}
             style={{
-              width: '100%', minHeight: 128, padding: '16px',
+              width: '100%', minHeight: 100, padding: '12px 16px',
               background: 'transparent', border: 'none', outline: 'none', resize: 'none',
               fontSize: 15, color: '#2D1020', lineHeight: 1.9, fontWeight: 400,
             }}
