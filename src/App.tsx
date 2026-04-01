@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { supabase } from './utils/supabase'
+import './App.css'
 
 /* ═══════════════════════════════════════════════════════════
    TYPES
@@ -12,11 +14,11 @@ type Route =
   | { path: 'write'; userId: string }
 
 interface Letter {
-  id: string; type: LetterType; message: string
-  from: string; isAnonymous: boolean; createdAt: string
+  id: string; box_id: string; type: LetterType; message: string
+  from_name: string; is_anonymous: boolean; created_at: string
 }
-interface UserData {
-  id: string; nickname: string; password: string; letters: Letter[]
+interface LetterBox {
+  id: string; nickname: string; letters: Letter[]
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -211,42 +213,8 @@ const STAGE_CONF: StageConf[] = [
 ]
 
 /* ═══════════════════════════════════════════════════════════
-   STORAGE & ROUTING
+   ROUTING
 ═══════════════════════════════════════════════════════════ */
-const DB_KEY = 'blossom_db_v4'
-const SESSION_KEY = 'blossom_auth_v4' // { userId: true }
-
-function getDB(): Record<string, UserData> {
-  try { return JSON.parse(localStorage.getItem(DB_KEY) || '{}') } catch { return {} }
-}
-function saveDB(db: Record<string, UserData>) {
-  localStorage.setItem(DB_KEY, JSON.stringify(db))
-}
-function getUser(id: string): UserData | null { return getDB()[id] || null }
-function createUser(nickname: string, password: string): UserData {
-  const user: UserData = { id: Math.random().toString(36).slice(2, 9), nickname, password, letters: [] }
-  const db = getDB(); db[user.id] = user; saveDB(db)
-  localStorage.setItem('blossom_me', user.id)
-  return user
-}
-function addLetterToUser(userId: string, letter: Letter): boolean {
-  const db = getDB()
-  if (!db[userId]) return false
-  db[userId].letters.push(letter); saveDB(db); return true
-}
-function getMyUserId(): string | null { return localStorage.getItem('blossom_me') }
-
-// Session auth helpers
-function isAuthed(userId: string): boolean {
-  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || '{}')[userId] === true }
-  catch { return false }
-}
-function setAuthed(userId: string) {
-  try {
-    const s = JSON.parse(sessionStorage.getItem(SESSION_KEY) || '{}')
-    s[userId] = true; sessionStorage.setItem(SESSION_KEY, JSON.stringify(s))
-  } catch { }
-}
 
 function getStage(count: number): Stage {
   if (count >= 5) return 3
@@ -665,7 +633,9 @@ function LetterModal({ letter, onClose }: { letter: Letter; onClose: () => void 
             }}>{m.emoji}</div>
             <div>
               <PillBadge color={m.color} bg={m.pill}>{letter.type} 편지</PillBadge>
-              <p style={{ fontSize: 10, color: '#C0A8C0', marginTop: 3, fontWeight: 500 }}>{letter.createdAt}</p>
+              <p style={{ fontSize: 10, color: '#C0A8C0', marginTop: 3, fontWeight: 500 }}>
+                    {new Date(letter.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
+                  </p>
             </div>
           </div>
           <button onClick={onClose} style={{
@@ -689,14 +659,14 @@ function LetterModal({ letter, onClose }: { letter: Letter; onClose: () => void 
             background: `linear-gradient(135deg, ${m.soft}, ${m.color})`,
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17,
           }}>
-            {letter.isAnonymous ? '🎭' : '💌'}
+            {letter.is_anonymous ? '🎭' : '💌'}
           </div>
           <div>
             <p style={{ fontSize: 13, fontWeight: 800, color: '#3D1025' }}>
-              {letter.isAnonymous ? '익명의 친구' : letter.from}
+              {letter.is_anonymous ? '익명의 친구' : letter.from_name}
             </p>
             <p style={{ fontSize: 10, color: '#C0A0C0', fontWeight: 500 }}>
-              {letter.isAnonymous ? '소중한 마음을 담아 보냈어요 💕' : '이름을 남겨주었어요 ✉️'}
+              {letter.is_anonymous ? '소중한 마음을 담아 보냈어요 💕' : '이름을 남겨주었어요 ✉️'}
             </p>
           </div>
         </div>
@@ -708,21 +678,28 @@ function LetterModal({ letter, onClose }: { letter: Letter; onClose: () => void 
 /* ═══════════════════════════════════════════════════════════
    LOCK SCREEN (비밀번호 인증)
 ═══════════════════════════════════════════════════════════ */
-function LockScreen({ user, onUnlock }: { user: UserData; onUnlock: () => void }) {
+function LockScreen({ box, onUnlock }: { box: LetterBox; onUnlock: () => void }) {
   const [pw, setPw] = useState('')
   const [error, setError] = useState('')
   const [shaking, setShaking] = useState(false)
   const [showPw, setShowPw] = useState(false)
+  const [loading, setLoading] = useState(false)
 
-  const attempt = () => {
-    if (pw === user.password) {
-      setAuthed(user.id)
-      onUnlock()
-    } else {
+  const attempt = async () => {
+    if (!pw || loading) return
+    setLoading(true)
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: `box-${box.id}@spring-letter.app`,
+      password: pw,
+    })
+    setLoading(false)
+    if (authError) {
       setError('비밀번호가 맞지 않아요')
       setShaking(true)
       setPw('')
       setTimeout(() => { setShaking(false); setError('') }, 600)
+    } else {
+      onUnlock()
     }
   }
 
@@ -750,22 +727,11 @@ function LockScreen({ user, onUnlock }: { user: UserData; onUnlock: () => void }
 
       <div style={{ textAlign: 'center' }}>
         <h2 style={{ fontSize: 21, fontWeight: 800, color: '#2D1020', marginBottom: 8, letterSpacing: -0.3 }}>
-          {user.nickname}님의 편지함
+          {box.nickname}님의 편지함
         </h2>
         <p style={{ fontSize: 13, color: '#C09AB0', lineHeight: 1.8, fontWeight: 500 }}>
           소중한 편지를 보호하고 있어요.<br />비밀번호를 입력해 편지함을 열어보세요.
         </p>
-      </div>
-
-      {/* Password dots preview */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: -10 }}>
-        {Array.from({ length: Math.max(4, user.password.length) }).map((_, i) => (
-          <div key={i} style={{
-            width: 12, height: 12, borderRadius: '50%',
-            background: i < pw.length ? '#FF6B9D' : '#FFD0E8',
-            transition: 'background 0.2s ease',
-          }} />
-        ))}
       </div>
 
       {/* Input */}
@@ -807,7 +773,7 @@ function LockScreen({ user, onUnlock }: { user: UserData; onUnlock: () => void }
 
       <button
         onClick={attempt}
-        disabled={!pw}
+        disabled={!pw || loading}
         style={{
           width: '100%', padding: '16px',
           background: pw ? 'linear-gradient(135deg, #FF85AD, #FF6B9D)' : '#F0E0E8',
@@ -819,7 +785,10 @@ function LockScreen({ user, onUnlock }: { user: UserData; onUnlock: () => void }
         onPointerDown={e => pw && (e.currentTarget.style.transform = 'scale(0.97)')}
         onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
       >
-        🌸 편지함 열기
+        {loading
+          ? <span style={{ display: 'inline-block', animation: 'floatY 0.6s ease-in-out infinite' }}>🌸</span>
+          : '🌸 편지함 열기'
+        }
       </button>
     </div>
   )
@@ -829,7 +798,19 @@ function LockScreen({ user, onUnlock }: { user: UserData; onUnlock: () => void }
    SCREEN 1 — LANDING  (/)
 ═══════════════════════════════════════════════════════════ */
 function LandingScreen() {
-  const myId = getMyUserId()
+  const [myBoxId, setMyBoxId] = useState<string | null>(null)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) return
+      const { data } = await supabase
+        .from('letter_boxes')
+        .select('id')
+        .eq('owner_id', session.user.id)
+        .single()
+      if (data) setMyBoxId(data.id)
+    })
+  }, [])
 
   return (
     <div style={{
@@ -913,8 +894,8 @@ function LandingScreen() {
         >
           🌱 나만의 봄 편지함 만들기
         </button>
-        {myId && (
-          <button onClick={() => go(`/box/${myId}`)} style={{
+        {myBoxId && (
+          <button onClick={() => go(`/box/${myBoxId}`)} style={{
             width: '100%', padding: '14px',
             background: 'rgba(255,255,255,0.72)',
             border: '1.5px solid rgba(255,179,204,0.5)',
@@ -937,6 +918,7 @@ function CreateScreen() {
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [errors, setErrors] = useState({ nickname: '', password: '' })
+  const [loading, setLoading] = useState(false)
 
   const validate = () => {
     const e = { nickname: '', password: '' }
@@ -948,14 +930,34 @@ function CreateScreen() {
     return !e.nickname && !e.password
   }
 
-  const handleCreate = () => {
-    if (!validate()) return
-    const user = createUser(nickname.trim(), password)
-    setAuthed(user.id) // 생성자는 자동 인증
-    go(`/box/${user.id}`)
+  const handleCreate = async () => {
+    if (!validate() || loading) return
+    setLoading(true)
+
+    const boxId = crypto.randomUUID()
+    const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      email: `box-${boxId}@spring-letter.app`,
+      password,
+    })
+    if (signUpError || !authData.user) {
+      setErrors(e => ({ ...e, nickname: '오류가 발생했어요. 다시 시도해주세요.' }))
+      setLoading(false)
+      return
+    }
+
+    const { error: insertError } = await supabase
+      .from('letter_boxes')
+      .insert({ id: boxId, nickname: nickname.trim() })
+    if (insertError) {
+      setErrors(e => ({ ...e, nickname: '편지함 생성에 실패했어요.' }))
+      setLoading(false)
+      return
+    }
+
+    go(`/box/${boxId}`)
   }
 
-  const canSubmit = nickname.trim().length > 0 && password.length >= 4
+  const canSubmit = nickname.trim().length > 0 && password.length >= 4 && !loading
 
   return (
     <div style={{
@@ -1107,7 +1109,10 @@ function CreateScreen() {
           onPointerDown={e => canSubmit && (e.currentTarget.style.transform = 'scale(0.97)')}
           onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
         >
-          🌸 봄 편지함 만들기
+          {loading
+            ? <span style={{ display: 'inline-block', animation: 'floatY 0.6s ease-in-out infinite' }}>🌸</span>
+            : '🌸 봄 편지함 만들기'
+          }
         </button>
       </div>
     </div>
@@ -1118,17 +1123,74 @@ function CreateScreen() {
    SCREEN 3 — DASHBOARD  (/box/:userId)
 ═══════════════════════════════════════════════════════════ */
 function DashboardScreen({ userId }: { userId: string }) {
-  const [user, setUser] = useState<UserData | null>(() => getUser(userId))
-  const [authed, setAuthedState] = useState(() => isAuthed(userId))
+  const [box, setBox] = useState<LetterBox | null>(null)
+  const [authed, setAuthed] = useState(false)
+  const [pageLoading, setPageLoading] = useState(true)
   const [selectedLetter, setSelectedLetter] = useState<Letter | null>(null)
   const [copied, setCopied] = useState(false)
 
+  // 초기 로드: 박스 메타 + 세션 오너십 확인
   useEffect(() => {
-    const t = setInterval(() => setUser(getUser(userId)), 3000)
-    return () => clearInterval(t)
+    async function init() {
+      setPageLoading(true)
+
+      const { data: boxMeta } = await supabase
+        .from('letter_boxes')
+        .select('id, nickname, owner_id')
+        .eq('id', userId)
+        .single()
+
+      if (!boxMeta) { setPageLoading(false); return }
+
+      setBox({ id: boxMeta.id, nickname: boxMeta.nickname, letters: [] })
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session && session.user.id === boxMeta.owner_id) {
+        const { data: letters } = await supabase
+          .from('letters')
+          .select('*')
+          .eq('box_id', userId)
+          .order('created_at', { ascending: true })
+        setBox({ id: boxMeta.id, nickname: boxMeta.nickname, letters: letters ?? [] })
+        setAuthed(true)
+      }
+
+      setPageLoading(false)
+    }
+    init()
   }, [userId])
 
-  if (!user) {
+  // Realtime 구독 (인증된 오너만)
+  useEffect(() => {
+    if (!authed) return
+    const channel = supabase
+      .channel(`box:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'letters', filter: `box_id=eq.${userId}` },
+        payload => {
+          setBox(prev => prev
+            ? { ...prev, letters: [...prev.letters, payload.new as Letter] }
+            : null
+          )
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [authed, userId])
+
+  if (pageLoading) {
+    return (
+      <div style={{
+        minHeight: '100dvh', background: '#FFF5F9',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <span style={{ fontSize: 36, animation: 'floatY 1s ease-in-out infinite' }}>🌸</span>
+      </div>
+    )
+  }
+
+  if (!box) {
     return (
       <div style={{
         minHeight: '100dvh', background: '#FFF5F9',
@@ -1152,23 +1214,31 @@ function DashboardScreen({ userId }: { userId: string }) {
   if (!authed) {
     return (
       <LockScreen
-        user={user}
-        onUnlock={() => setAuthedState(true)}
+        box={box}
+        onUnlock={async () => {
+          const { data: letters } = await supabase
+            .from('letters')
+            .select('*')
+            .eq('box_id', userId)
+            .order('created_at', { ascending: true })
+          setBox(prev => prev ? { ...prev, letters: letters ?? [] } : null)
+          setAuthed(true)
+        }}
       />
     )
   }
 
   // 인증 후: 대시보드
-  const stage = getStage(user.letters.length)
+  const stage = getStage(box.letters.length)
   const conf = STAGE_CONF[stage]
   const shareUrl = `${window.location.origin}${window.location.pathname}#/write/${userId}`
   const nextThreshold = [0, 1, 3, 5, 999][Math.min(stage + 1, 4)]
-  const remaining = Math.max(0, nextThreshold - user.letters.length)
+  const remaining = Math.max(0, nextThreshold - box.letters.length)
 
   const handleCopy = async () => {
     try {
       if (navigator.share) {
-        await navigator.share({ title: `${user.nickname}님의 벚꽃편지함`, url: shareUrl })
+        await navigator.share({ title: `${box.nickname}님의 벚꽃편지함`, url: shareUrl })
       } else {
         await navigator.clipboard.writeText(shareUrl)
         setCopied(true); setTimeout(() => setCopied(false), 2200)
@@ -1206,7 +1276,7 @@ function DashboardScreen({ userId }: { userId: string }) {
           boxShadow: '0 2px 14px rgba(255,107,157,0.14)',
         }}>
           <span style={{ fontSize: 16, animation: 'floatY 2.5s ease-in-out infinite' }}>🌸</span>
-          <span style={{ fontSize: 14, fontWeight: 800, color: '#CC3D6B' }}>{user.nickname}님의 나무</span>
+          <span style={{ fontSize: 14, fontWeight: 800, color: '#CC3D6B' }}>{box.nickname}님의 나무</span>
         </div>
 
         <div style={{
@@ -1223,7 +1293,7 @@ function DashboardScreen({ userId }: { userId: string }) {
 
       {/* Tree */}
       <div style={{ position: 'relative', zIndex: 15, animation: 'fadeUp 0.6s 0.1s ease backwards' }}>
-        <CherryTree letterCount={user.letters.length} />
+        <CherryTree letterCount={box.letters.length} />
       </div>
 
       {/* Bottom card */}
@@ -1248,7 +1318,7 @@ function DashboardScreen({ userId }: { userId: string }) {
                 <span style={{
                   fontSize: 13, fontWeight: 800, color: '#FF6B9D',
                   background: '#FFE0EE', padding: '2px 9px', borderRadius: 99,
-                }}>{user.letters.length}송이 🌸</span>
+                }}>{box.letters.length}송이 🌸</span>
               </div>
               {stage < 3 && remaining > 0 && (
                 <span style={{ fontSize: 11, color: '#C0A8C0', fontWeight: 500 }}>다음 단계까지 {remaining}통</span>
@@ -1260,7 +1330,7 @@ function DashboardScreen({ userId }: { userId: string }) {
             <div style={{ height: 8, background: '#FFE8F2', borderRadius: 99, overflow: 'hidden', border: '1px solid rgba(255,179,204,0.28)' }}>
               <div style={{
                 height: '100%',
-                width: `${stage === 3 ? 100 : Math.min(100, (user.letters.length / 4) * 100)}%`,
+                width: `${stage === 3 ? 100 : Math.min(100, (box.letters.length / 4) * 100)}%`,
                 background: 'linear-gradient(90deg, #FFB3CC, #FF6B9D)',
                 borderRadius: 99, transition: 'width 1s cubic-bezier(0.22,1,0.36,1)',
               }} />
@@ -1268,13 +1338,13 @@ function DashboardScreen({ userId }: { userId: string }) {
           </div>
 
           {/* Letter grid */}
-          {user.letters.length > 0 && (
+          {box.letters.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: '#C0A0C0', marginBottom: 8, letterSpacing: 0.5 }}>
                 💌 받은 편지 — 꽃을 눌러보세요
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 7 }}>
-                {user.letters.map((letter, i) => {
+                {box.letters.map((letter, i) => {
                   const m = TYPE_META[letter.type]
                   return (
                     <button key={letter.id} onClick={() => setSelectedLetter(letter)} style={{
@@ -1343,7 +1413,7 @@ function DashboardScreen({ userId }: { userId: string }) {
    SCREEN 4 — WRITE  (/write/:userId)
 ═══════════════════════════════════════════════════════════ */
 function WriteScreen({ userId }: { userId: string }) {
-  const [recipient] = useState<UserData | null>(() => getUser(userId))
+  const [box, setBox] = useState<{ id: string; nickname: string } | null>(null)
   const [type, setType] = useState<LetterType>('감사')
   const [message, setMessage] = useState('')
   const [isAnonymous, setIsAnonymous] = useState(true)
@@ -1352,7 +1422,16 @@ function WriteScreen({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(false)
   const meta = TYPE_META[type]
 
-  if (!recipient) {
+  useEffect(() => {
+    supabase
+      .from('letter_boxes')
+      .select('id, nickname')
+      .eq('id', userId)
+      .single()
+      .then(({ data }) => { if (data) setBox(data) })
+  }, [userId])
+
+  if (!box) {
     return (
       <div style={{
         minHeight: '100dvh', background: '#FFF5F9',
@@ -1368,18 +1447,18 @@ function WriteScreen({ userId }: { userId: string }) {
     )
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!message.trim() || loading) return
     setLoading(true)
-    const letter: Letter = {
-      id: Date.now().toString(), type,
+    await supabase.from('letters').insert({
+      box_id: userId,
+      type,
       message: message.trim(),
-      from: isAnonymous ? '익명' : (from.trim() || '익명'),
-      isAnonymous,
-      createdAt: `${new Date().getMonth() + 1}.${new Date().getDate()}`,
-    }
-    addLetterToUser(userId, letter)
-    setTimeout(() => { setLoading(false); setSubmitted(true) }, 600)
+      from_name: isAnonymous ? '익명' : (from.trim() || '익명'),
+      is_anonymous: isAnonymous,
+    })
+    setLoading(false)
+    setSubmitted(true)
   }
 
   if (submitted) {
@@ -1412,7 +1491,7 @@ function WriteScreen({ userId }: { userId: string }) {
           </h2>
           <p style={{ fontSize: 14, color: '#C09AB0', lineHeight: 1.9, fontWeight: 500 }}>
             소중한 진심 한 통이{' '}
-            <b style={{ color: meta.color }}>{recipient.nickname}</b>님의<br />
+            <b style={{ color: meta.color }}>{box.nickname}</b>님의<br />
             나무에 꽃으로 피어났습니다
           </p>
         </div>
@@ -1425,7 +1504,7 @@ function WriteScreen({ userId }: { userId: string }) {
             당신의 편지로
           </p>
           <p style={{ fontSize: 14, color: '#3D1025', fontWeight: 600, lineHeight: 1.8 }}>
-            {recipient.nickname}님의 나무에<br />
+            {box.nickname}님의 나무에<br />
             우리만의 봄이 피어났습니다 🌸
           </p>
         </div>
@@ -1458,7 +1537,7 @@ function WriteScreen({ userId }: { userId: string }) {
           <span style={{
             background: 'linear-gradient(135deg, #FF6B9D, #A78BFA)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          }}>{recipient.nickname}</span>님에게<br />
+          }}>{box.nickname}</span>님에게<br />
           평소 전하지 못한 마음을 전해보세요 💌
         </h2>
       </div>
@@ -1508,7 +1587,7 @@ function WriteScreen({ userId }: { userId: string }) {
           <textarea
             value={message}
             onChange={e => setMessage(e.target.value)}
-            placeholder={`${recipient.nickname}님에게 ${['칭찬하고 싶은 점', '힘이 되는 말', '감사한 마음'][['칭찬', '응원', '감사'].indexOf(type)]}을 써주세요...`}
+            placeholder={`${box.nickname}님에게 ${['칭찬하고 싶은 점', '힘이 되는 말', '감사한 마음'][['칭찬', '응원', '감사'].indexOf(type)]}을 써주세요...`}
             maxLength={200}
             style={{
               width: '100%', minHeight: 128, padding: '16px',
@@ -1604,7 +1683,7 @@ function WriteScreen({ userId }: { userId: string }) {
         >
           {loading
             ? <span style={{ display: 'inline-block', animation: 'floatY 0.6s ease-in-out infinite' }}>🌸</span>
-            : <>{meta.emoji} {recipient.nickname}님께 꽃 보내기</>
+            : <>{meta.emoji} {box.nickname}님께 꽃 보내기</>
           }
         </button>
       </div>
@@ -1629,6 +1708,7 @@ export default function App() {
     window.addEventListener('hashchange', handler)
     return () => window.removeEventListener('hashchange', handler)
   }, [])
+
 
   return (
     <div className="app-shell">
