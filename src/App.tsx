@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Helmet } from 'react-helmet-async'
 import { supabase } from './utils/supabase'
 import './App.css'
 
@@ -813,6 +814,10 @@ function LandingScreen() {
   }, [])
 
   return (
+    <>
+      <Helmet>
+        <title>벚꽃 편지함</title>
+      </Helmet>
     <div style={{
       minHeight: '100dvh',
       background: 'linear-gradient(180deg, #FFF5F7 0%, #FFF0FA 42%, #F5EEFF 100%)',
@@ -907,6 +912,7 @@ function LandingScreen() {
         )}
       </div>
     </div>
+    </>
   )
 }
 
@@ -961,6 +967,10 @@ function CreateScreen() {
   const canSubmit = nickname.trim().length > 0 && password.length >= 6 && !loading
 
   return (
+    <>
+      <Helmet>
+        <title>편지함 만들기 · 벚꽃 편지함</title>
+      </Helmet>
     <div style={{
       minHeight: '100dvh',
       background: 'linear-gradient(180deg, #FFFDF9 0%, #FFF5F0 100%)',
@@ -1117,6 +1127,7 @@ function CreateScreen() {
         </button>
       </div>
     </div>
+    </>
   )
 }
 
@@ -1253,6 +1264,10 @@ function DashboardScreen({ userId }: { userId: string }) {
   }
 
   return (
+    <>
+      <Helmet>
+        <title>{box.nickname}님의 벚꽃 편지함</title>
+      </Helmet>
     <div style={{
       minHeight: '100dvh',
       background: `linear-gradient(180deg, ${conf.skyA} 0%, ${conf.skyB} 50%, ${conf.bodyBg} 100%)`,
@@ -1407,6 +1422,7 @@ function DashboardScreen({ userId }: { userId: string }) {
         <LetterModal letter={selectedLetter} onClose={() => setSelectedLetter(null)} />
       )}
     </div>
+    </>
   )
 }
 
@@ -1522,6 +1538,10 @@ function WriteScreen({ userId }: { userId: string }) {
   }
 
   return (
+    <>
+      <Helmet>
+        <title>{box ? `${box.nickname}님의 진심을 기다리고 있어요 · 벚꽃 편지함` : '벚꽃 편지함'}</title>
+      </Helmet>
     <div style={{ minHeight: '100dvh', background: '#FFF5F9', display: 'flex', flexDirection: 'column' }}
       className="screen-enter">
       {/* Header */}
@@ -1689,6 +1709,7 @@ function WriteScreen({ userId }: { userId: string }) {
         </button>
       </div>
     </div>
+    </>
   )
 }
 
