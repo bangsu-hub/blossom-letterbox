@@ -224,17 +224,19 @@ function getStage(count: number): Stage {
   return 0
 }
 
-function parseRoute(hash: string): Route {
-  const h = hash.replace(/^#/, '') || '/'
-  if (!h || h === '/') return { path: 'landing' }
-  if (h === '/create') return { path: 'create' }
-  const box = h.match(/^\/box\/([^/]+)$/)
+function parseRoute(pathname: string): Route {
+  if (!pathname || pathname === '/') return { path: 'landing' }
+  if (pathname === '/create') return { path: 'create' }
+  const box = pathname.match(/^\/box\/([^/]+)$/)
   if (box) return { path: 'dashboard', userId: box[1] }
-  const write = h.match(/^\/write\/([^/]+)$/)
+  const write = pathname.match(/^\/write\/([^/]+)$/)
   if (write) return { path: 'write', userId: write[1] }
   return { path: 'landing' }
 }
-const go = (path: string) => { window.location.hash = path }
+const go = (path: string) => {
+  window.history.pushState({}, '', path)
+  window.dispatchEvent(new Event('routechange'))
+}
 
 /* ═══════════════════════════════════════════════════════════
    GLOBAL CSS
@@ -1714,10 +1716,10 @@ function WriteScreen({ userId }: { userId: string }) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   APP ROOT — hash-based routing
+   APP ROOT — path-based routing
 ═══════════════════════════════════════════════════════════ */
 export default function App() {
-  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash))
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname))
 
   useEffect(() => {
     const el = document.createElement('style')
@@ -1726,9 +1728,13 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const handler = () => setRoute(parseRoute(window.location.hash))
-    window.addEventListener('hashchange', handler)
-    return () => window.removeEventListener('hashchange', handler)
+    const handler = () => setRoute(parseRoute(window.location.pathname))
+    window.addEventListener('popstate', handler)
+    window.addEventListener('routechange', handler)
+    return () => {
+      window.removeEventListener('popstate', handler)
+      window.removeEventListener('routechange', handler)
+    }
   }, [])
 
 
