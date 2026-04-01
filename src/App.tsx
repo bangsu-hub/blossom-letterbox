@@ -692,7 +692,7 @@ function LockScreen({ box, onUnlock }: { box: LetterBox; onUnlock: () => void })
     if (!pw || loading) return
     setLoading(true)
     const { error: authError } = await supabase.auth.signInWithPassword({
-      email: `box-${box.id}@spring-letter.app`,
+      email: `box-${box.id}@gmail.com`,
       password: pw,
     })
     setLoading(false)
