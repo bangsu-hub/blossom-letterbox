@@ -638,7 +638,7 @@ function LetterModal({ letter, onClose }: { letter: Letter; onClose: () => void 
             <div>
               <PillBadge color={m.color} bg={m.pill}>{letter.type} 편지</PillBadge>
               <p style={{ fontSize: 10, color: '#C0A8C0', marginTop: 3, fontWeight: 500 }}>
-                    {new Date(letter.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
+                    {new Date(letter.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </p>
             </div>
           </div>
