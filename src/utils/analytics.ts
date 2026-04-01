@@ -30,3 +30,9 @@ export function trackShareLink(method: 'copy' | 'native_share') {
   if (!MEASUREMENT_ID) return
   ReactGA.event('share_link', { method })
 }
+
+/** 편지 작성 화면 → 편지함 만들기 이동 */
+export function trackWriteToCreate() {
+  if (!MEASUREMENT_ID) return
+  ReactGA.event('click_create_from_write')
+}

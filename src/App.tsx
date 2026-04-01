@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { supabase } from './utils/supabase'
-import { trackPageView, trackCreateMailbox, trackSendLetter, trackShareLink } from './utils/analytics'
+import { trackPageView, trackCreateMailbox, trackSendLetter, trackShareLink, trackWriteToCreate } from './utils/analytics'
 import './App.css'
 
 /* ═══════════════════════════════════════════════════════════
@@ -1592,7 +1592,7 @@ function WriteScreen({ userId }: { userId: string }) {
             <span style={{ fontSize: 14, animation: 'floatY 2.5s ease-in-out infinite' }}>🌸</span>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#C09AB0' }}>벚꽃편지함</span>
           </div>
-          <button onClick={() => go('/create')} style={{
+          <button onClick={() => { trackWriteToCreate(); go('/create') }} style={{
             padding: '6px 12px',
             background: 'linear-gradient(135deg, #FF85AD, #FF6B9D)',
             borderRadius: 20, fontSize: 11, fontWeight: 700, color: '#fff',
