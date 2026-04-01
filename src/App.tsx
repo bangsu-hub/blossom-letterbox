@@ -936,7 +936,7 @@ function CreateScreen() {
 
     const boxId = crypto.randomUUID()
     const { data: authData, error: signUpError } = await supabase.auth.signUp({
-      email: `box-${boxId}@spring-letter.app`,
+      email: `box-${boxId}@gmail.com`,
       password,
     })
     if (signUpError || !authData.user) {
