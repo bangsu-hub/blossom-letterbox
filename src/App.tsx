@@ -1433,6 +1433,7 @@ function DashboardScreen({ userId }: { userId: string }) {
 ═══════════════════════════════════════════════════════════ */
 function WriteScreen({ userId }: { userId: string }) {
   const [box, setBox] = useState<{ id: string; nickname: string } | null>(null)
+  const [pageLoading, setPageLoading] = useState(true)
   const [type, setType] = useState<LetterType>('감사')
   const [message, setMessage] = useState('')
   const [isAnonymous, setIsAnonymous] = useState(true)
@@ -1447,8 +1448,22 @@ function WriteScreen({ userId }: { userId: string }) {
       .select('id, nickname')
       .eq('id', userId)
       .single()
-      .then(({ data }) => { if (data) setBox(data) })
+      .then(({ data }) => {
+        if (data) setBox(data)
+        setPageLoading(false)
+      })
   }, [userId])
+
+  if (pageLoading) {
+    return (
+      <div style={{
+        minHeight: '100dvh', background: '#FFF5F9',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <span style={{ fontSize: 36, animation: 'floatY 1s ease-in-out infinite' }}>🌸</span>
+      </div>
+    )
+  }
 
   if (!box) {
     return (
