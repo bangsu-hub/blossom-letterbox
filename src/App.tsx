@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { supabase } from './utils/supabase'
+import { trackPageView, trackCreateMailbox, trackSendLetter, trackShareLink } from './utils/analytics'
 import './App.css'
 
 /* ═══════════════════════════════════════════════════════════
@@ -963,6 +964,7 @@ function CreateScreen() {
       return
     }
 
+    trackCreateMailbox(nickname.trim())
     go(`/box/${boxId}`)
   }
 
@@ -1267,13 +1269,16 @@ function DashboardScreen({ userId }: { userId: string }) {
     try {
       if (navigator.share) {
         await navigator.share({ title: `${box.nickname}님의 벚꽃편지함`, url: shareUrl })
+        trackShareLink('native_share')
       } else {
         await navigator.clipboard.writeText(shareUrl)
+        trackShareLink('copy')
         setCopied(true); setTimeout(() => setCopied(false), 2200)
       }
     } catch {
       try {
         await navigator.clipboard.writeText(shareUrl)
+        trackShareLink('copy')
         setCopied(true); setTimeout(() => setCopied(false), 2200)
       } catch { }
     }
@@ -1516,6 +1521,7 @@ function WriteScreen({ userId }: { userId: string }) {
       is_anonymous: isAnonymous,
     })
     setLoading(false)
+    trackSendLetter(type, isAnonymous)
     setSubmitted(true)
   }
 
@@ -1775,6 +1781,17 @@ export default function App() {
       window.removeEventListener('routechange', handler)
     }
   }, [])
+
+  // 페이지뷰 추적
+  useEffect(() => {
+    const pageMap: Record<Route['path'], string> = {
+      landing: '메인',
+      create: '편지함 만들기',
+      dashboard: '내 편지함',
+      write: '편지 쓰기',
+    }
+    trackPageView(window.location.pathname, pageMap[route.path])
+  }, [route])
 
 
   return (
