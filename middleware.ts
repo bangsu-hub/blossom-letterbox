@@ -6,7 +6,7 @@ export const config = {
 
 export default async function middleware(request: Request) {
   const ua = request.headers.get('user-agent') ?? ''
-  const isCrawler = /kakaotalk|facebookexternalhit|twitterbot|linkedinbot|slackbot|discordbot|whatsapp|telegrambot|googlebot|bingbot/i.test(ua)
+  const isCrawler = /kakaotalk-scrap|facebookexternalhit|twitterbot|linkedinbot|slackbot|discordbot|whatsapp|telegrambot|googlebot|bingbot/i.test(ua)
 
   if (!isCrawler) return next()
 
