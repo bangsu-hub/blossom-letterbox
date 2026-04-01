@@ -1245,7 +1245,7 @@ function DashboardScreen({ userId }: { userId: string }) {
   // 인증 후: 대시보드
   const stage = getStage(box.letters.length)
   const conf = STAGE_CONF[stage]
-  const shareUrl = `${window.location.origin}${window.location.pathname}#/write/${userId}`
+  const shareUrl = `${window.location.origin}/write/${userId}`
   const nextThreshold = [0, 1, 3, 5, 999][Math.min(stage + 1, 4)]
   const remaining = Math.max(0, nextThreshold - box.letters.length)
 
