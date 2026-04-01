@@ -940,6 +940,7 @@ function CreateScreen() {
       password,
     })
     if (signUpError || !authData.user) {
+      console.error('[signUp error]', signUpError)
       setErrors(e => ({ ...e, nickname: '오류가 발생했어요. 다시 시도해주세요.' }))
       setLoading(false)
       return
@@ -947,7 +948,7 @@ function CreateScreen() {
 
     const { error: insertError } = await supabase
       .from('letter_boxes')
-      .insert({ id: boxId, nickname: nickname.trim() })
+      .insert({ id: boxId, owner_id: authData.user.id, nickname: nickname.trim() })
     if (insertError) {
       setErrors(e => ({ ...e, nickname: '편지함 생성에 실패했어요.' }))
       setLoading(false)
