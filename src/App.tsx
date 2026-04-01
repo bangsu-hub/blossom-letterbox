@@ -1681,20 +1681,26 @@ function WriteScreen({ userId }: { userId: string }) {
           👤 보내는 사람
         </p>
         <div style={{
-          background: '#fff', border: '2px solid #FFE0EC',
+          background: '#FFF0F6', border: '2px solid #FFE0EC',
           borderRadius: 20, overflow: 'hidden', marginBottom: 8,
           boxShadow: '0 2px 12px rgba(255,107,157,0.08)',
         }}>
-          <div style={{ display: 'flex' }}>
-            {[{ v: true, label: '🎭 익명으로' }, { v: false, label: '✍️ 이름 남기기' }].map(opt => (
-              <button key={String(opt.v)} onClick={() => setIsAnonymous(opt.v)} style={{
-                flex: 1, padding: '12px 8px',
-                background: isAnonymous === opt.v ? '#FFE8F2' : 'transparent',
-                color: isAnonymous === opt.v ? '#FF6B9D' : '#BBA8CC',
-                fontSize: 13, fontWeight: isAnonymous === opt.v ? 800 : 500,
-                transition: 'all 0.2s',
-              }}>{opt.label}</button>
-            ))}
+          <div style={{ display: 'flex', gap: 6, padding: 6 }}>
+            {[{ v: true, label: '🎭 익명으로' }, { v: false, label: '✍️ 이름 남기기' }].map(opt => {
+              const active = isAnonymous === opt.v
+              return (
+                <button key={String(opt.v)} onClick={() => setIsAnonymous(opt.v)} style={{
+                  flex: 1, padding: '10px 8px',
+                  background: active ? 'linear-gradient(135deg, #FF85AD, #FF6B9D)' : 'transparent',
+                  color: active ? '#fff' : '#C0A0C0',
+                  fontSize: 13, fontWeight: active ? 800 : 500,
+                  borderRadius: 14,
+                  boxShadow: active ? '0 4px 14px rgba(255,107,157,0.35)' : 'none',
+                  transform: active ? 'scale(1.03)' : 'scale(1)',
+                  transition: 'all 0.2s ease',
+                }}>{opt.label}</button>
+              )
+            })}
           </div>
           {!isAnonymous && (
             <input value={from} onChange={e => setFrom(e.target.value)}
