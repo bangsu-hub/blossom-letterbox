@@ -925,7 +925,7 @@ function CreateScreen() {
     if (!nickname.trim()) e.nickname = '이름을 입력해주세요 🌱'
     else if (nickname.trim().length > 12) e.nickname = '12자 이내로 입력해주세요'
     if (!password) e.password = '비밀번호를 설정해주세요 🔒'
-    else if (password.length < 4) e.password = '4자 이상 입력해주세요'
+    else if (password.length < 6) e.password = '6자 이상 입력해주세요'
     setErrors(e)
     return !e.nickname && !e.password
   }
@@ -958,7 +958,7 @@ function CreateScreen() {
     go(`/box/${boxId}`)
   }
 
-  const canSubmit = nickname.trim().length > 0 && password.length >= 4 && !loading
+  const canSubmit = nickname.trim().length > 0 && password.length >= 6 && !loading
 
   return (
     <div style={{
