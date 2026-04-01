@@ -656,23 +656,13 @@ function LetterModal({ letter, onClose }: { letter: Letter; onClose: () => void 
         <div style={{
           padding: '12px 22px 18px',
           borderTop: `1.5px solid ${m.pill}`, background: m.bg,
-          display: 'flex', alignItems: 'center', gap: 10,
         }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: '50%',
-            background: `linear-gradient(135deg, ${m.soft}, ${m.color})`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17,
-          }}>
-            {letter.is_anonymous ? '🎭' : '💌'}
-          </div>
-          <div>
-            <p style={{ fontSize: 13, fontWeight: 800, color: '#3D1025' }}>
-              {letter.is_anonymous ? '익명의 친구' : letter.from_name}
-            </p>
-            <p style={{ fontSize: 10, color: '#C0A0C0', fontWeight: 500 }}>
-              {letter.is_anonymous ? '소중한 마음을 담아 보냈어요 💕' : '이름을 남겨주었어요 ✉️'}
-            </p>
-          </div>
+          <p style={{ fontSize: 10, color: '#C0A0C0', fontWeight: 500, marginBottom: 3 }}>
+            {letter.is_anonymous ? '소중한 마음을 담아 보냈어요 💕' : '이름을 남겨주었어요 ✉️'}
+          </p>
+          <p style={{ fontSize: 13, fontWeight: 800, color: '#3D1025' }}>
+            {letter.is_anonymous ? '🎭 익명의 친구' : `💌 ${letter.from_name}`}
+          </p>
         </div>
       </div>
     </div>
