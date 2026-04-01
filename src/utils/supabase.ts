@@ -4,6 +4,7 @@ export type LetterType = '칭찬' | '응원' | '감사'
 
 export interface Database {
   public: {
+    PostgrestVersion: "12"
     Tables: {
       letter_boxes: {
         Row: {
@@ -21,6 +22,7 @@ export interface Database {
         Update: {
           nickname?: string
         }
+        Relationships: []
       }
       letters: {
         Row: {
@@ -41,8 +43,23 @@ export interface Database {
           is_anonymous?: boolean
           created_at?: string
         }
-        Update: never
+        Update: {
+          [key: string]: never
+        }
+        Relationships: []
       }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
     }
   }
 }
