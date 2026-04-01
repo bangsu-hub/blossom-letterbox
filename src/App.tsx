@@ -831,7 +831,7 @@ function LandingScreen() {
 
       {/* Logo pill */}
       <div style={{
-        marginTop: 60, marginBottom: 4,
+        marginTop: 'calc(env(safe-area-inset-top, 0px) + 20px)', marginBottom: 4,
         display: 'flex', alignItems: 'center', gap: 8,
         background: 'rgba(255,255,255,0.75)', backdropFilter: 'blur(12px)',
         padding: '8px 18px', borderRadius: 99,
@@ -845,7 +845,7 @@ function LandingScreen() {
 
       {/* Tree preview */}
       <div style={{
-        width: '88%', maxWidth: 340,
+        width: '72%', maxWidth: 280,
         animation: 'fadeUp 0.6s 0.1s ease backwards',
       }}>
         <CherryTree letterCount={26} />
@@ -858,8 +858,8 @@ function LandingScreen() {
         animation: 'fadeUp 0.6s 0.18s ease backwards',
       }}>
         <h1 style={{
-          fontSize: 22, fontWeight: 900, color: '#2D1020',
-          letterSpacing: -0.6, lineHeight: 1.35, marginBottom: 12,
+          fontSize: 20, fontWeight: 900, color: '#2D1020',
+          letterSpacing: -0.6, lineHeight: 1.35, marginBottom: 8,
         }}>
           소중한 진심 한 통에 하나씩,<br />{' '}
           <span style={{
@@ -875,7 +875,7 @@ function LandingScreen() {
 
       {/* CTAs */}
       <div style={{
-        width: '100%', padding: '22px 24px 44px',
+        width: '100%', padding: '14px 24px 32px',
         display: 'flex', flexDirection: 'column', gap: 10,
         animation: 'fadeUp 0.6s 0.26s ease backwards',
       }}>
