@@ -831,7 +831,7 @@ function RollingPaperModal({
         buyer_name: '',
         buyer_tel: '',
         // 모바일에서 결제창이 새 페이지로 열릴 때 복귀 URL
-        m_redirect_url: `${window.location.origin}/box/${boxId}?payment=done`,
+        m_redirect_url: `${window.location.origin}/box/${boxId}`,
       },
       async (rsp) => {
         // ── 프론트 1차 체크 ───────────────────────────────────
