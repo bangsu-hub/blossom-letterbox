@@ -778,7 +778,7 @@ function RollingPaperModal({
   const displayLetters = paid ? realLetters : SAMPLE_LETTERS
 
   useEffect(() => {
-    const impCode = import.meta.env.VITE_PORTONE_IMP_CODE as string | undefined
+    const impCode = (import.meta.env.VITE_PORTONE_IMP_CODE as string | undefined) || 'imp81538743'
     if (window.IMP && impCode) window.IMP.init(impCode)
   }, [])
 
@@ -796,7 +796,7 @@ function RollingPaperModal({
     })
 
   const handlePayment = async () => {
-    const impCode = import.meta.env.VITE_PORTONE_IMP_CODE as string | undefined
+    const impCode = (import.meta.env.VITE_PORTONE_IMP_CODE as string | undefined) || 'imp81538743'
     if (!impCode) {
       setPayError('결제 설정 오류가 발생했어요. 잠시 후 다시 시도해주세요.')
       return
