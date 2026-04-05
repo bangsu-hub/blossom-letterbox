@@ -713,32 +713,10 @@ function ShimmerStrip() {
    RLS 정책 "letter_boxes: owner update premium" 에 의해
    인증된 오너만 자신의 박스에 is_premium = true 를 쓸 수 있습니다.
 ═══════════════════════════════════════════════════════════ */
-async function activatePremium(boxId: string): Promise<{ success: boolean; reason?: string }> {
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return { success: false, reason: '로그인 세션이 없어요. 다시 로그인해주세요.' }
-
-    const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/letter_boxes?id=eq.${encodeURIComponent(boxId)}`,
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY as string,
-          'Authorization': `Bearer ${session.access_token}`,
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify({ is_premium: true }),
-      }
-    )
-    if (!res.ok) {
-      const msg = await res.text().catch(() => res.statusText)
-      return { success: false, reason: `저장 실패 (${res.status}): ${msg}` }
-    }
-    return { success: true }
-  } catch (e) {
-    return { success: false, reason: `네트워크 오류: ${String(e)}` }
-  }
+async function activatePremium(_boxId: string): Promise<{ success: boolean; reason?: string }> {
+  const { error } = await supabase.rpc('activate_my_premium')
+  if (error) return { success: false, reason: `저장 실패: ${error.message}` }
+  return { success: true }
 }
 
 /* ═══════════════════════════════════════════════════════════
