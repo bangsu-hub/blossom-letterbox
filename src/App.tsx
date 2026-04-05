@@ -713,10 +713,21 @@ function ShimmerStrip() {
    RLS 정책 "letter_boxes: owner update premium" 에 의해
    인증된 오너만 자신의 박스에 is_premium = true 를 쓸 수 있습니다.
 ═══════════════════════════════════════════════════════════ */
-async function activatePremium(_boxId: string): Promise<{ success: boolean; reason?: string }> {
-  const { error } = await supabase.rpc('activate_my_premium')
-  if (error) return { success: false, reason: `저장 실패: ${error.message}` }
-  return { success: true }
+async function activatePremium(_boxId: string): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? ''
+    await fetch(`${base}/rest/v1/rpc/activate_my_premium`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': session.access_token,
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: '{}',
+    })
+  } catch (_) { /* 백그라운드 업데이트 실패는 무시 */ }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -833,24 +844,12 @@ function RollingPaperModal({
           return
         }
 
-        // ── DB 업데이트 ───────────────────────────────────────
-        // PortOne 콜백이 success=true 로 왔으므로 결제 완료로 간주합니다.
-        // RLS 정책에 의해 인증된 오너만 자신의 박스를 업데이트할 수 있습니다.
-        try {
-          const result = await activatePremium(boxId)
-          if (!result.success) {
-            setPayError(result.reason ?? '저장에 실패했어요. 다시 시도해주세요.')
-            setPayLoading(false)
-            return
-          }
-          trackPurchaseRollingPaper(boxId)
-          setPaid(true)
-          onPaid()
-        } catch (e) {
-          setPayError(`오류: ${String(e)}`)
-        }
-
+        // 결제 성공 → UI 즉시 업데이트 (DB 업데이트는 백그라운드)
+        trackPurchaseRollingPaper(boxId)
+        setPaid(true)
+        onPaid()
         setPayLoading(false)
+        activatePremium(boxId)
       }
     )
   }
@@ -1812,12 +1811,11 @@ function DashboardScreen({ userId }: { userId: string }) {
         window.history.replaceState({}, '', window.location.pathname)
 
         if (impSuccess === 'true') {
-          const result = await activatePremium(userId)
-          if (result.success) {
-            trackPurchaseRollingPaper(userId)
-            setIsPremium(true)
-            setShowRollingPaper(true)
-          }
+          // 결제 성공 → UI 즉시 업데이트, DB는 백그라운드
+          trackPurchaseRollingPaper(userId)
+          setIsPremium(true)
+          setShowRollingPaper(true)
+          activatePremium(userId)
         }
         // imp_success=false 면 결제 실패/취소 — 별도 처리 없이 그냥 넘어감
       }
