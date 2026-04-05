@@ -1,7 +1,27 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import html2canvas from 'html2canvas'
+// PortOne V1 타입 선언 (CDN 스크립트로 주입됨)
+declare global {
+  interface Window {
+    IMP: {
+      init(merchantId: string): void
+      request_pay(
+        params: {
+          pg: string; pay_method: string; merchant_uid: string
+          name: string; amount: number
+          buyer_email?: string; buyer_name?: string; buyer_tel?: string
+          m_redirect_url?: string
+        },
+        callback: (rsp: {
+          success: boolean; imp_uid: string; merchant_uid: string; error_msg?: string
+        }) => void
+      ): void
+    }
+  }
+}
 import { Helmet } from 'react-helmet-async'
 import { supabase } from './utils/supabase'
-import { trackPageView, trackCreateMailbox, trackSendLetter, trackShareLink, trackWriteToCreate } from './utils/analytics'
+import { trackPageView, trackCreateMailbox, trackSendLetter, trackShareLink, trackWriteToCreate, trackPurchaseRollingPaper } from './utils/analytics'
 import './App.css'
 
 /* ═══════════════════════════════════════════════════════════
@@ -18,6 +38,7 @@ type Route =
 interface Letter {
   id: string; box_id: string; type: LetterType; message: string
   from_name: string; is_anonymous: boolean; created_at: string
+  deleted_at: string | null
 }
 interface LetterBox {
   id: string; nickname: string; letters: Letter[]
@@ -280,6 +301,10 @@ const CSS = `
     60%  { transform:scale(1.25) rotate(6deg); opacity:1; }
     100% { transform:scale(1) rotate(0); opacity:1; }
   }
+  @keyframes slideUp {
+    0%   { transform: translateY(100%); }
+    100% { transform: translateY(0); }
+  }
   @keyframes sway {
     0%,100% { transform-origin:50% 100%; transform:rotate(0deg); }
     25%      { transform-origin:50% 100%; transform:rotate(0.7deg); }
@@ -316,9 +341,26 @@ const CSS = `
     60%     { transform:translateX(-6px); }
     80%     { transform:translateX(6px); }
   }
+  @keyframes treeShake {
+    0%,100% { transform:rotate(0deg); }
+    18%     { transform:rotate(-1.4deg); }
+    42%     { transform:rotate(1.1deg); }
+    65%     { transform:rotate(-0.5deg); }
+    84%     { transform:rotate(0.25deg); }
+  }
+  @keyframes petalFlutter {
+    0%   { opacity:0.92; transform:translate(0,0) rotate3d(1,1,0.5,0deg) scale(1); }
+    15%  { transform:translate(var(--sx), calc(var(--dy)*0.11)) rotate3d(0.8,1,0.3,55deg); }
+    30%  { transform:translate(0px, calc(var(--dy)*0.26)) rotate3d(1,0.4,1,115deg); }
+    45%  { transform:translate(calc(var(--sx)*-0.9), calc(var(--dy)*0.44)) rotate3d(0.3,1,0.6,175deg); opacity:0.78; }
+    60%  { transform:translate(calc(var(--sx)*0.5), calc(var(--dy)*0.61)) rotate3d(1,0.7,0.2,235deg); }
+    78%  { transform:translate(calc(var(--sx)*-0.5), calc(var(--dy)*0.80)) rotate3d(0.5,0.5,1,305deg); opacity:0.38; }
+    100% { opacity:0; transform:translate(calc(var(--sx)*0.3),var(--dy)) rotate3d(1,1,0.5,420deg) scale(0.55); }
+  }
 
   .screen-enter { animation:slideUp .38s cubic-bezier(0.22,1,0.36,1) forwards; }
   .shake { animation:shakePw 0.4s ease; }
+  .tree-shake { transform-origin:195px 400px; animation:treeShake 0.95s cubic-bezier(0.36,0.07,0.19,0.97) both; }
 
   button { cursor:pointer; border:none; outline:none; font-family:inherit; }
   input, textarea { font-family:inherit; }
@@ -424,13 +466,77 @@ function LeafShape({ x, y, a }: { x: number; y: number; a: number }) {
 /* ═══════════════════════════════════════════════════════════
    CHERRY BLOSSOM TREE
 ═══════════════════════════════════════════════════════════ */
+interface FlutterPetal {
+  id: number
+  left: number
+  top: number
+  size: number
+  dur: number
+  delay: number
+  sx: string
+  dy: string
+  color: string
+}
+
+let _petalId = 0
+function spawnPetals(): FlutterPetal[] {
+  const count = 10 + Math.floor(Math.random() * 6)
+  return Array.from({ length: count }, () => {
+    const sign = Math.random() > 0.5 ? 1 : -1
+    return {
+      id: _petalId++,
+      left: 15 + Math.random() * 70,
+      top:  10 + Math.random() * 55,
+      size: 7  + Math.random() * 8,
+      dur:  4.2 + Math.random() * 2.8,
+      delay: Math.random() * 0.9,
+      sx:   `${sign * (38 + Math.random() * 62)}px`,
+      dy:   `${280 + Math.random() * 220}px`,
+      color: Math.random() > 0.45 ? '#FFB7D5' : '#FFD9EA',
+    }
+  })
+}
+
 function CherryTree({ letterCount }: { letterCount: number }) {
   const stage = getStage(letterCount)
   const conf = STAGE_CONF[stage]
   const visibleCount = Math.min(letterCount, FLOWER_SPOTS.length)
   const balancedSpots = pickBalanced(visibleCount)
+  const [shaking, setShaking] = useState(false)
+  const [petals, setPetals] = useState<FlutterPetal[]>([])
+
+  const handleTreeClick = () => {
+    if (shaking) return
+    setShaking(true)
+    setTimeout(() => setShaking(false), 950)
+    const newPetals = spawnPetals()
+    setPetals(prev => [...prev, ...newPetals])
+    const maxDur = Math.max(...newPetals.map(p => (p.dur + p.delay) * 1000))
+    setTimeout(() => {
+      const ids = new Set(newPetals.map(p => p.id))
+      setPetals(prev => prev.filter(p => !ids.has(p.id)))
+    }, maxDur + 200)
+  }
 
   return (
+    <div style={{ position: 'relative', cursor: 'pointer' }} onClick={handleTreeClick}>
+      {/* 클릭 시 꽃잎 flutter */}
+      {petals.length > 0 && (
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 20, overflow: 'visible', perspective: '600px' }}>
+          {petals.map(p => (
+            <div key={p.id} style={{
+              position: 'absolute',
+              left: `${p.left}%`, top: `${p.top}%`,
+              width: p.size, height: p.size * 0.68,
+              background: `radial-gradient(ellipse at 38% 28%, #fff6, ${p.color})`,
+              borderRadius: '50% 28% 50% 28% / 42% 52% 42% 52%',
+              ['--sx' as string]: p.sx,
+              ['--dy' as string]: p.dy,
+              animation: `petalFlutter ${p.dur}s ${p.delay}s ease-in-out forwards`,
+            }} />
+          ))}
+        </div>
+      )}
     <svg viewBox="0 0 390 400" xmlns="http://www.w3.org/2000/svg"
       style={{ width: '100%', display: 'block', transition: 'all 1.6s ease' }}>
       <defs>
@@ -487,7 +593,8 @@ function CherryTree({ letterCount }: { letterCount: number }) {
         </g>
       ))}
 
-      {/* ── Tree group (sways in stage 2+) ── */}
+      {/* ── Tree group (sways in stage 2+, shakes on click) ── */}
+      <g className={shaking ? 'tree-shake' : ''}>
       <g style={{ animation: stage >= 2 ? 'sway 5s ease-in-out infinite' : 'none' }}>
         {/* Branches */}
         <g stroke="url(#trunkGrad)" strokeLinecap="round" fill="none">
@@ -561,7 +668,9 @@ function CherryTree({ letterCount }: { letterCount: number }) {
           </g>
         )}
       </g>
+      </g>{/* /tree-shake wrapper */}
     </svg>
+    </div>
   )
 }
 
@@ -600,10 +709,365 @@ function ShimmerStrip() {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   결제 후 DB 업데이트 헬퍼
+   RLS 정책 "letter_boxes: owner update premium" 에 의해
+   인증된 오너만 자신의 박스에 is_premium = true 를 쓸 수 있습니다.
+═══════════════════════════════════════════════════════════ */
+async function activatePremium(boxId: string): Promise<{ success: boolean; reason?: string }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return { success: false, reason: '로그인 세션이 없어요. 다시 로그인해주세요.' }
+
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/letter_boxes?id=eq.${encodeURIComponent(boxId)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY as string,
+          'Authorization': `Bearer ${session.access_token}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({ is_premium: true }),
+      }
+    )
+    if (!res.ok) {
+      const msg = await res.text().catch(() => res.statusText)
+      return { success: false, reason: `저장 실패 (${res.status}): ${msg}` }
+    }
+    return { success: true }
+  } catch (e) {
+    return { success: false, reason: `네트워크 오류: ${String(e)}` }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ROLLING PAPER SAMPLE DATA
+═══════════════════════════════════════════════════════════ */
+const SAMPLE_LETTERS: Letter[] = [
+  { id: 's1', box_id: '', type: '칭찬', message: '항상 밝고 긍정적인 모습이 주변 사람들에게 큰 힘이 돼요 ✨ 네가 있어서 우리 팀이 훨씬 빛나는 것 같아요!', from_name: '오랜 친구', is_anonymous: false, created_at: '2024-03-20T10:00:00Z', deleted_at: null },
+  { id: 's2', box_id: '', type: '응원', message: '지금 하는 일 모두 잘 될 거예요! 항상 최선을 다하는 모습이 정말 멋있어요. 파이팅 🔥', from_name: '익명', is_anonymous: true, created_at: '2024-03-21T11:00:00Z', deleted_at: null },
+  { id: 's3', box_id: '', type: '감사', message: '힘들 때마다 내 얘기 들어줘서 정말 고마워요. 덕분에 많이 웃을 수 있었어요 🌸', from_name: '소중한 사람', is_anonymous: false, created_at: '2024-03-22T14:00:00Z', deleted_at: null },
+  { id: 's4', box_id: '', type: '칭찬', message: '세심한 배려 덕분에 주변이 항상 따뜻해요. 당신의 작은 말 한마디가 큰 위로가 됐어요 💕', from_name: '익명', is_anonymous: true, created_at: '2024-03-23T09:00:00Z', deleted_at: null },
+]
+
+/* ═══════════════════════════════════════════════════════════
+   ROLLING PAPER MODAL
+═══════════════════════════════════════════════════════════ */
+function RollingPaperModal({
+  boxId,
+  nickname,
+  realLetters,
+  initialPaid,
+  onPaid,
+  onClose,
+}: {
+  boxId: string
+  nickname: string
+  realLetters: Letter[]
+  initialPaid: boolean
+  onPaid: () => void
+  onClose: () => void
+}) {
+  const [paid, setPaid] = useState(initialPaid)
+  const [payLoading, setPayLoading] = useState(false)
+  const [payError, setPayError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const paperRef = useRef<HTMLDivElement>(null)
+
+  const displayLetters = paid ? realLetters : SAMPLE_LETTERS
+
+  // IMP.init()은 페이지당 1회만 호출해야 합니다.
+  // 모달이 열릴 때 한 번만 초기화합니다.
+  useEffect(() => {
+    if (window.IMP) {
+      window.IMP.init(import.meta.env.VITE_PORTONE_IMP_CODE as string)
+    }
+  }, [])
+
+  const handlePayment = () => {
+    if (!window.IMP) {
+      setPayError('결제 모듈을 불러오는 중이에요. 잠시 후 다시 시도해주세요.')
+      return
+    }
+
+    setPayLoading(true)
+    setPayError('')
+
+    // Date.now() + 랜덤 suffix로 중복 방지
+    const merchantUid = `blossom-${boxId.slice(0, 8)}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
+    window.IMP.request_pay(
+      {
+        pg: 'tosspayments',          // 토스페이먼츠 테스트 채널
+        pay_method: 'card',           // 신용카드
+        merchant_uid: merchantUid,
+        name: '벚꽃 편지함 소장용 이미지',
+        amount: 990,
+        buyer_email: '',
+        buyer_name: '',
+        buyer_tel: '',
+        // 모바일에서 결제창이 새 페이지로 열릴 때 복귀 URL
+        m_redirect_url: `${window.location.origin}/box/${boxId}?payment=done`,
+      },
+      async (rsp) => {
+        // ── 프론트 1차 체크 ───────────────────────────────────
+        // 모바일에서 결제창이 redirect 방식으로 열릴 경우
+        // 페이지가 재로드되면서 rsp.success=false 가 반환될 수 있습니다.
+        // imp_uid 가 없으면 진짜 취소/실패, 있으면 서버에서 실제 상태를 확인합니다.
+        if (!rsp.success && !rsp.imp_uid) {
+          setPayError(rsp.error_msg ?? '결제가 취소되었어요.')
+          setPayLoading(false)
+          return
+        }
+
+        // ── DB 업데이트 ───────────────────────────────────────
+        // PortOne 콜백이 success=true 로 왔으므로 결제 완료로 간주합니다.
+        // RLS 정책에 의해 인증된 오너만 자신의 박스를 업데이트할 수 있습니다.
+        try {
+          const result = await activatePremium(boxId)
+          if (!result.success) {
+            setPayError(result.reason ?? '저장에 실패했어요. 다시 시도해주세요.')
+            setPayLoading(false)
+            return
+          }
+          trackPurchaseRollingPaper(boxId)
+          setPaid(true)
+          onPaid()
+        } catch (e) {
+          setPayError(`오류: ${String(e)}`)
+        }
+
+        setPayLoading(false)
+      }
+    )
+  }
+
+  const handleSave = async () => {
+    if (!paperRef.current || saving) return
+    setSaving(true)
+    try {
+      const el = paperRef.current
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#FFF5F7',
+        logging: false,
+        width: el.scrollWidth,
+        height: el.scrollHeight,
+        onclone: (_doc, clone) => {
+          // 애니메이션·트랜지션 제거 + 그래디언트 배경을 단색으로 교체
+          clone.querySelectorAll<HTMLElement>('*').forEach(child => {
+            child.style.animation = 'none'
+            child.style.transition = 'none'
+            child.style.animationFillMode = 'none'
+            // linear-gradient 배경이 있는 height≤2px 구분선은 단색으로 대체
+            const bg = child.style.background || child.style.backgroundImage
+            if (bg.includes('linear-gradient') && child.offsetHeight <= 2) {
+              child.style.background = '#FFB3D4'
+              child.style.backgroundImage = 'none'
+            }
+          })
+        },
+      })
+      const dataUrl = canvas.toDataURL('image/png')
+      const link = document.createElement('a')
+      link.download = `${nickname}님의_벚꽃편지함.png`
+      link.href = dataUrl
+      link.style.display = 'none'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (e) {
+      alert(`이미지 저장에 실패했어요: ${String(e)}`)
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 300,
+      background: 'rgba(30,10,20,0.6)',
+      display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      animation: 'fadeIn 0.2s ease forwards',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: '100%', maxWidth: 430,
+        background: '#FFF5F7',
+        borderRadius: '28px 28px 0 0',
+        maxHeight: '92dvh',
+        display: 'flex', flexDirection: 'column',
+        boxShadow: '0 -12px 48px rgba(255,107,157,0.22)',
+        animation: 'slideUp 0.3s cubic-bezier(0.22,1,0.36,1) forwards',
+      }}>
+        {/* 핸들 */}
+        <div style={{ padding: '14px 24px 0', flexShrink: 0 }}>
+          <div style={{ width: 40, height: 4, borderRadius: 2, background: '#F0D0E0', margin: '0 auto 14px' }} />
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div>
+              <h3 style={{ fontSize: 17, fontWeight: 900, color: '#2D1020' }}>
+                🌸 롤링페이퍼 소장하기
+              </h3>
+              <p style={{ fontSize: 11, color: '#C09AB0', marginTop: 2, fontWeight: 500 }}>
+                {paid ? '내 편지들로 만든 롤링페이퍼예요' : '샘플 미리보기 중 · 결제 후 내 편지로 교체돼요'}
+              </p>
+            </div>
+            <button onClick={onClose} style={{ fontSize: 20, color: '#C0A0C0', padding: 4, background: 'none' }}>✕</button>
+          </div>
+
+          {/* 샘플 안내 배너 */}
+          {!paid && (
+            <div style={{
+              background: '#FFF8E8', border: '1.5px solid #FFDC80',
+              borderRadius: 12, padding: '8px 12px', marginTop: 10, marginBottom: 2,
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ fontSize: 14 }}>✨</span>
+              <p style={{ fontSize: 11, color: '#A08020', fontWeight: 600, lineHeight: 1.6 }}>
+                지금은 예시 편지로 미리보기 중이에요.<br />
+                <span style={{ color: '#C06010' }}>990원 결제 후 내 실제 편지들로 바뀌어요.</span>
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* 롤링페이퍼 본문 (스크롤) */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+          {/* 이미지로 저장될 영역 */}
+          <div ref={paperRef} style={{
+            background: 'linear-gradient(160deg, #FFF5F7 0%, #FFF0F6 40%, #F8F0FF 100%)',
+            borderRadius: 20, padding: '20px 16px',
+            border: '1.5px solid #FFD8EE',
+          }}>
+            {/* 헤더 */}
+            <div style={{ textAlign: 'center', marginBottom: 18 }}>
+              <div style={{ fontSize: 28, marginBottom: 6 }}>🌸</div>
+              <p style={{ fontSize: 16, fontWeight: 900, color: '#CC3D6B', marginBottom: 2 }}>
+                {paid ? `${nickname}` : '미리보기'}님의 봄 편지함
+              </p>
+              <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #FFB3D4, transparent)', margin: '10px 0 0' }} />
+            </div>
+
+            {/* 편지 카드 그리드 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {displayLetters.map((letter) => {
+                const m = TYPE_META[letter.type]
+                return (
+                  <div key={letter.id} style={{
+                    background: '#fff',
+                    borderRadius: 16, padding: '12px 12px',
+                    border: `1.5px solid ${m.pill}`,
+                    boxShadow: `0 3px 12px ${m.color}18`,
+                    display: 'flex', flexDirection: 'column', gap: 6,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{
+                        fontSize: 10, fontWeight: 800, color: m.color,
+                        background: m.bg, padding: '2px 7px', borderRadius: 99,
+                        border: `1px solid ${m.pill}`,
+                      }}>{m.emoji} {letter.type}</span>
+                    </div>
+                    <p style={{
+                      fontSize: 11, color: '#3D1025', lineHeight: 1.7, fontWeight: 500,
+                      wordBreak: 'keep-all',
+                    }}>{letter.message}</p>
+                    <p style={{ fontSize: 10, color: '#C0A0C0', fontWeight: 600, marginTop: 'auto' }}>
+                      — {letter.is_anonymous ? '익명' : letter.from_name}
+                    </p>
+                    <p style={{ fontSize: 9, color: '#D8C0D0', fontWeight: 500 }}>
+                      {new Date(letter.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* 하단 장식 */}
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              <p style={{ fontSize: 10, color: '#D0B0C8', fontWeight: 500 }}>
+                {new Date().getFullYear()}년 봄 🌸
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 하단 버튼 영역 */}
+        <div style={{ padding: '12px 16px 36px', flexShrink: 0, borderTop: '1px solid #FFE8F2' }}>
+          {payError && (
+            <div style={{
+              background: '#FFF0F0', border: '1.5px solid #FFAAAA',
+              borderRadius: 12, padding: '10px 14px', marginBottom: 10,
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ fontSize: 14 }}>⚠️</span>
+              <p style={{ fontSize: 11, color: '#CC3333', fontWeight: 600, lineHeight: 1.5 }}>{payError}</p>
+            </div>
+          )}
+          {!paid ? (
+            /* 결제 버튼 */
+            <button onClick={handlePayment} disabled={payLoading} style={{
+              width: '100%', padding: '16px',
+              background: payLoading ? '#F0E8F0' : 'linear-gradient(135deg, #FF85AD, #FF6B9D)',
+              borderRadius: 20, marginBottom: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              boxShadow: payLoading ? 'none' : '0 6px 22px rgba(255,107,157,0.38)',
+              transition: 'all 0.25s',
+            }}>
+              <span style={{ fontSize: 18 }}>💳</span>
+              <div style={{ textAlign: 'left' }}>
+                <p style={{ fontSize: 14, fontWeight: 800, color: payLoading ? '#A888A8' : '#fff', marginBottom: 1 }}>
+                  {payLoading ? '결제 처리 중...' : '990원 결제하고 내 편지로 소장'}
+                </p>
+                <p style={{ fontSize: 10, color: payLoading ? '#C0A0C0' : 'rgba(255,255,255,0.8)', fontWeight: 500 }}>
+                  내 실제 편지들로 롤링페이퍼 완성 + PNG 저장
+                </p>
+              </div>
+            </button>
+          ) : (
+            /* 저장 버튼 */
+            <button onClick={handleSave} disabled={saving} style={{
+              width: '100%', padding: '16px',
+              background: saving ? '#F0E8F0' : 'linear-gradient(135deg, #7ACC8A, #4CAF6F)',
+              borderRadius: 20, marginBottom: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              boxShadow: saving ? 'none' : '0 6px 22px rgba(76,175,111,0.35)',
+              transition: 'all 0.25s',
+            }}>
+              <span style={{ fontSize: 18 }}>📥</span>
+              <div style={{ textAlign: 'left' }}>
+                <p style={{ fontSize: 14, fontWeight: 800, color: saving ? '#A888A8' : '#fff', marginBottom: 1 }}>
+                  {saving ? '이미지 저장 중...' : '사진첩에 저장하기'}
+                </p>
+                <p style={{ fontSize: 10, color: saving ? '#C0A0C0' : 'rgba(255,255,255,0.8)', fontWeight: 500 }}>
+                  PNG 파일로 다운로드돼요
+                </p>
+              </div>
+            </button>
+          )}
+          <button onClick={onClose} style={{
+            width: '100%', padding: '11px',
+            background: 'transparent', color: '#C0A0C0',
+            fontSize: 13, fontWeight: 600,
+          }}>닫기</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
    LETTER MODAL
 ═══════════════════════════════════════════════════════════ */
-function LetterModal({ letter, onClose }: { letter: Letter; onClose: () => void }) {
+function LetterModal({ letter, onClose, onDelete }: {
+  letter: Letter
+  onClose: () => void
+  onDelete: (id: string) => void
+}) {
   const m = TYPE_META[letter.type]
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
   return (
     <div onClick={onClose} style={{
       position: 'absolute', inset: 0, zIndex: 100,
@@ -638,8 +1102,8 @@ function LetterModal({ letter, onClose }: { letter: Letter; onClose: () => void 
             <div>
               <PillBadge color={m.color} bg={m.pill}>{letter.type} 편지</PillBadge>
               <p style={{ fontSize: 10, color: '#C0A8C0', marginTop: 3, fontWeight: 500 }}>
-                    {new Date(letter.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </p>
+                {new Date(letter.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </p>
             </div>
           </div>
           <button onClick={onClose} style={{
@@ -648,13 +1112,15 @@ function LetterModal({ letter, onClose }: { letter: Letter; onClose: () => void 
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>✕</button>
         </div>
+
         <div style={{ padding: '20px 22px', minHeight: 100 }}>
           <p style={{ fontSize: 15, lineHeight: 2, color: '#2D1020', fontWeight: 400, whiteSpace: 'pre-wrap' }}>
             {letter.message}
           </p>
         </div>
+
         <div style={{
-          padding: '12px 22px 18px',
+          padding: '12px 22px 14px',
           borderTop: `1.5px solid ${m.pill}`, background: m.bg,
         }}>
           <p style={{ fontSize: 10, color: '#C0A0C0', fontWeight: 500, marginBottom: 3 }}>
@@ -663,6 +1129,42 @@ function LetterModal({ letter, onClose }: { letter: Letter; onClose: () => void 
           <p style={{ fontSize: 13, fontWeight: 800, color: '#3D1025' }}>
             {letter.is_anonymous ? '🎭 익명의 친구' : `💌 ${letter.from_name}`}
           </p>
+        </div>
+
+        {/* 삭제 버튼 */}
+        <div style={{ padding: '10px 22px 18px', background: m.bg }}>
+          {!confirmDelete ? (
+            <button onClick={() => setConfirmDelete(true)} style={{
+              width: '100%', padding: '9px',
+              background: 'transparent', border: '1.5px solid #F0D0D0',
+              borderRadius: 14, fontSize: 12, color: '#C09898', fontWeight: 600,
+            }}>
+              🗑️ 편지 삭제
+            </button>
+          ) : (
+            <div style={{
+              background: '#FFF0F0', border: '1.5px solid #FFAAAA',
+              borderRadius: 14, padding: '12px 14px',
+            }}>
+              <p style={{ fontSize: 11, color: '#CC3333', fontWeight: 700, marginBottom: 10, lineHeight: 1.6, textAlign: 'center' }}>
+                삭제하면 다시 복구할 수 없습니다.<br />정말 삭제하시겠습니까?
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setConfirmDelete(false)} style={{
+                  flex: 1, padding: '9px',
+                  background: '#F0E8F0', borderRadius: 12,
+                  fontSize: 12, fontWeight: 700, color: '#A888A8',
+                }}>취소</button>
+                <button onClick={() => onDelete(letter.id)} style={{
+                  flex: 1, padding: '9px',
+                  background: 'linear-gradient(135deg, #FF7070, #EE4444)',
+                  borderRadius: 12,
+                  fontSize: 12, fontWeight: 800, color: '#fff',
+                  boxShadow: '0 3px 10px rgba(238,68,68,0.35)',
+                }}>삭제</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -918,6 +1420,8 @@ function CreateScreen() {
   const [showPw, setShowPw] = useState(false)
   const [errors, setErrors] = useState({ nickname: '', password: '' })
   const [loading, setLoading] = useState(false)
+  const [createdBoxId, setCreatedBoxId] = useState<string | null>(null)
+  const [urlCopied, setUrlCopied] = useState(false)
 
   const validate = () => {
     const e = { nickname: '', password: '' }
@@ -955,10 +1459,111 @@ function CreateScreen() {
     }
 
     trackCreateMailbox(nickname.trim())
-    go(`/box/${boxId}`)
+    setCreatedBoxId(boxId)
+    setLoading(false)
   }
 
   const canSubmit = nickname.trim().length > 0 && password.length >= 6 && !loading
+
+  // ── 생성 완료 화면 ──────────────────────────────────────────
+  if (createdBoxId) {
+    const boxUrl = `${window.location.origin}/box/${createdBoxId}`
+    const handleCopyUrl = async () => {
+      try {
+        await navigator.clipboard.writeText(boxUrl)
+        setUrlCopied(true)
+        setTimeout(() => setUrlCopied(false), 2500)
+      } catch {
+        // fallback
+      }
+    }
+    return (
+      <>
+        <Helmet>
+          <title>편지함 만들기 완료 · 벚꽃 편지함</title>
+        </Helmet>
+        <div style={{
+          minHeight: '100dvh',
+          background: 'linear-gradient(180deg, #FFFDF9 0%, #FFF5F0 100%)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', padding: '32px 28px',
+        }} className="screen-enter">
+          {/* 성공 아이콘 */}
+          <div style={{
+            width: 100, height: 100, borderRadius: '50%',
+            background: 'linear-gradient(135deg, #FFD0E8, #FFB3CC)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 48, boxShadow: '0 8px 32px rgba(255,107,157,0.26)',
+            marginBottom: 24, animation: 'floatY 2.5s ease-in-out infinite',
+          }}>🌸</div>
+
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: '#2D1020', marginBottom: 8, textAlign: 'center' }}>
+            편지함이 만들어졌어요!
+          </h2>
+          <p style={{ fontSize: 13, color: '#C09AB0', marginBottom: 32, textAlign: 'center', lineHeight: 1.8, fontWeight: 500 }}>
+            아래 링크를 꼭 저장해두세요.<br />
+            <span style={{ color: '#FF6B9D', fontWeight: 700 }}>이 링크를 잃어버리면 편지함을 열 수 없어요.</span>
+          </p>
+
+          {/* URL 박스 */}
+          <div style={{
+            width: '100%',
+            background: '#FFF0F6',
+            border: '2px solid #FFB3D4',
+            borderRadius: 16, padding: '16px 18px',
+            marginBottom: 12,
+          }}>
+            <p style={{ fontSize: 10, fontWeight: 700, color: '#C09AB0', marginBottom: 6, letterSpacing: 0.5 }}>
+              📮 내 편지함 주소
+            </p>
+            <p style={{
+              fontSize: 12, fontWeight: 700, color: '#2D1020',
+              wordBreak: 'break-all', lineHeight: 1.6,
+            }}>{boxUrl}</p>
+          </div>
+
+          {/* URL 복사 버튼 */}
+          <button onClick={handleCopyUrl} style={{
+            width: '100%', padding: '15px',
+            background: urlCopied ? 'linear-gradient(135deg, #6FBF7F, #4CAF6F)' : 'linear-gradient(135deg, #FF85AD, #FF6B9D)',
+            borderRadius: 18, fontSize: 15, fontWeight: 800,
+            color: '#fff', marginBottom: 12,
+            boxShadow: '0 6px 22px rgba(255,107,157,0.36)',
+            transition: 'all 0.3s ease',
+          }}>
+            {urlCopied ? '✅ 링크 복사됨!' : '🔗 링크 복사하기'}
+          </button>
+
+          {/* 경고 박스 */}
+          <div style={{
+            width: '100%', padding: '13px 16px',
+            background: '#FFF8E8', border: '1.5px solid #FFDC80',
+            borderRadius: 14, marginBottom: 28,
+            display: 'flex', alignItems: 'flex-start', gap: 8,
+          }}>
+            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>⚠️</span>
+            <p style={{ fontSize: 11, color: '#A08020', lineHeight: 1.7, fontWeight: 600 }}>
+              이 링크가 곧 <span style={{ fontWeight: 800 }}>나만의 편지함 주소</span>예요.<br />
+              메모장이나 카카오톡 나에게 보내기로 저장해두세요.<br />
+              <span style={{ fontWeight: 800, color: '#C06010' }}>링크와 비밀번호를 잃어버리면 편지를 읽을 수 없어요.</span>
+            </p>
+          </div>
+
+          {/* 내 편지함으로 이동 */}
+          <button onClick={() => go(`/box/${createdBoxId}`)} style={{
+            width: '100%', padding: '15px',
+            background: '#FFF0F6',
+            border: '2px solid #FFB3D4',
+            borderRadius: 18, fontSize: 15, fontWeight: 800,
+            color: '#FF6B9D',
+            transition: 'all 0.2s',
+          }}>
+            내 편지함으로 이동 →
+          </button>
+        </div>
+      </>
+    )
+  }
 
   return (
     <>
@@ -1141,6 +1746,10 @@ function DashboardScreen({ userId }: { userId: string }) {
     } catch { return new Set() }
   })
 
+  // ── 롤링페이퍼 상태 ───────────────────────────────────
+  const [showRollingPaper, setShowRollingPaper] = useState(false)
+  const [isPremium, setIsPremium] = useState(false)
+
   const markRead = (id: string) => {
     setReadIds(prev => {
       const next = new Set(prev).add(id)
@@ -1156,12 +1765,13 @@ function DashboardScreen({ userId }: { userId: string }) {
 
       const { data: boxMeta } = await supabase
         .from('letter_boxes')
-        .select('id, nickname, owner_id')
+        .select('id, nickname, owner_id, is_premium')
         .eq('id', userId)
         .single()
 
       if (!boxMeta) { setPageLoading(false); return }
 
+      setIsPremium(boxMeta.is_premium)
       setBox({ id: boxMeta.id, nickname: boxMeta.nickname, letters: [] })
 
       const { data: { session } } = await supabase.auth.getSession()
@@ -1170,9 +1780,34 @@ function DashboardScreen({ userId }: { userId: string }) {
           .from('letters')
           .select('*')
           .eq('box_id', userId)
+          .is('deleted_at', null)
           .order('created_at', { ascending: true })
         setBox({ id: boxMeta.id, nickname: boxMeta.nickname, letters: letters ?? [] })
         setAuthed(true)
+      }
+
+      // ── 모바일 결제 redirect 복귀 처리 ───────────────────────
+      // 모바일에서 m_redirect_url 로 복귀 시 PortOne이 아래 파라미터를 붙여줍니다:
+      //   ?imp_uid=imp_xxx&merchant_uid=blossom-xxx&imp_success=true
+      // 이때 JS 콜백은 실행되지 않으므로 여기서 직접 서버 검증을 수행합니다.
+      const params = new URLSearchParams(window.location.search)
+      const impUid = params.get('imp_uid')
+      const merchantUid = params.get('merchant_uid')
+      const impSuccess = params.get('imp_success')
+
+      if (impUid && merchantUid) {
+        // URL 파라미터 즉시 정리 (새로고침 시 중복 실행 방지)
+        window.history.replaceState({}, '', window.location.pathname)
+
+        if (impSuccess === 'true') {
+          const result = await activatePremium(userId)
+          if (result.success) {
+            trackPurchaseRollingPaper(userId)
+            setIsPremium(true)
+            setShowRollingPaper(true)
+          }
+        }
+        // imp_success=false 면 결제 실패/취소 — 별도 처리 없이 그냥 넘어감
       }
 
       setPageLoading(false)
@@ -1240,12 +1875,23 @@ function DashboardScreen({ userId }: { userId: string }) {
             .from('letters')
             .select('*')
             .eq('box_id', userId)
+            .is('deleted_at', null)
             .order('created_at', { ascending: true })
           setBox(prev => prev ? { ...prev, letters: letters ?? [] } : null)
           setAuthed(true)
         }}
       />
     )
+  }
+
+  // 편지 삭제 (soft delete)
+  const handleDelete = async (letterId: string) => {
+    await supabase
+      .from('letters')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', letterId)
+    setBox(prev => prev ? { ...prev, letters: prev.letters.filter(l => l.id !== letterId) } : null)
+    setSelectedLetter(null)
   }
 
   // 인증 후: 대시보드
@@ -1380,24 +2026,25 @@ function DashboardScreen({ userId }: { userId: string }) {
                   const m = TYPE_META[letter.type]
                   const isRead = readIds.has(letter.id)
                   return (
-                    <button key={letter.id} onClick={() => { setSelectedLetter(letter); markRead(letter.id) }} style={{
-                      aspectRatio: '1',
-                      background: isRead
-                        ? `radial-gradient(circle at 38% 34%, #f5f5f5, #ede8f0)`
-                        : `radial-gradient(circle at 38% 34%, #fff, ${m.bg})`,
-                      border: `2px solid ${isRead ? '#D8CDE0' : m.pill}`,
-                      borderRadius: '50%',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      boxShadow: isRead ? 'none' : `0 3px 10px ${m.color}25`,
-                      animation: `bloomIn 0.44s ${i * 0.05}s ease backwards`,
-                      transition: 'transform 0.15s',
-                      opacity: isRead ? 0.55 : 1,
-                      position: 'relative',
-                    }}
+                    <button
+                      key={letter.id}
+                      onClick={() => { setSelectedLetter(letter); markRead(letter.id) }}
+                      style={{
+                        aspectRatio: '1',
+                        background: `radial-gradient(circle at 38% 34%, #fff, ${m.bg})`,
+                        border: `2px solid ${m.pill}`,
+                        borderRadius: '50%',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: isRead ? 'none' : `0 3px 10px ${m.color}25`,
+                        animation: `bloomIn 0.44s ${i * 0.05}s ease backwards`,
+                        transition: 'transform 0.15s, opacity 0.3s, filter 0.3s',
+                        opacity: isRead ? 0.35 : 1,
+                        filter: isRead ? 'blur(1px) grayscale(0.3)' : 'none',
+                      }}
                       onPointerDown={e => (e.currentTarget.style.transform = 'scale(0.88)')}
                       onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
                     >
-                      <span style={{ fontSize: 14 }}>{isRead ? '✓' : m.emoji}</span>
+                      <span style={{ fontSize: 14 }}>{m.emoji}</span>
                     </button>
                   )
                 })}
@@ -1409,6 +2056,7 @@ function DashboardScreen({ userId }: { userId: string }) {
           <div style={{
             background: '#FFF0F6', borderRadius: 18,
             padding: '12px 14px', border: '1.5px solid #FFD8EE',
+            marginBottom: 10,
           }}>
             <p style={{ fontSize: 11, fontWeight: 700, color: '#C0607A', marginBottom: 6 }}>
               🔗 링크를 공유하면 친구들이 편지를 써줄 수 있어요
@@ -1436,11 +2084,47 @@ function DashboardScreen({ userId }: { userId: string }) {
               </button>
             </div>
           </div>
+
+          {/* 롤링페이퍼 소장 버튼 */}
+          <button
+            onClick={() => setShowRollingPaper(true)}
+            style={{
+              width: '100%', padding: '13px 16px',
+              background: 'linear-gradient(135deg, #FFD0E8 0%, #E8D0FF 100%)',
+              border: '1.5px solid #F0B8D8',
+              borderRadius: 18,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              boxShadow: '0 4px 18px rgba(255,107,157,0.18)',
+              transition: 'all 0.2s',
+            }}
+            onPointerDown={e => (e.currentTarget.style.transform = 'scale(0.97)')}
+            onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+          >
+            <span style={{ fontSize: 18 }}>🎀</span>
+            <div style={{ textAlign: 'left' }}>
+              <p style={{ fontSize: 13, fontWeight: 800, color: '#CC3D6B' }}>
+                {isPremium ? '내 롤링페이퍼 보기 · 저장하기' : '내 편지 롤링페이퍼로 소장하기'}
+              </p>
+              <p style={{ fontSize: 10, color: '#D08AB0', fontWeight: 500 }}>
+                {isPremium ? '결제 완료 · 언제든 저장 가능해요' : '받은 편지를 예쁜 이미지로 저장 · 990원'}
+              </p>
+            </div>
+          </button>
         </div>
       </div>
 
       {selectedLetter && (
-        <LetterModal letter={selectedLetter} onClose={() => setSelectedLetter(null)} />
+        <LetterModal letter={selectedLetter} onClose={() => setSelectedLetter(null)} onDelete={handleDelete} />
+      )}
+      {showRollingPaper && (
+        <RollingPaperModal
+          boxId={userId}
+          nickname={box.nickname}
+          realLetters={box.letters}
+          initialPaid={isPremium}
+          onPaid={() => setIsPremium(true)}
+          onClose={() => setShowRollingPaper(false)}
+        />
       )}
     </div>
     </>

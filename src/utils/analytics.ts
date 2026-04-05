@@ -36,3 +36,14 @@ export function trackWriteToCreate() {
   if (!MEASUREMENT_ID) return
   ReactGA.event('click_create_from_write')
 }
+
+/** 롤링페이퍼 결제 완료 */
+export function trackPurchaseRollingPaper(boxId: string) {
+  if (!MEASUREMENT_ID) return
+  ReactGA.event('purchase', {
+    currency: 'KRW',
+    value: 990,
+    transaction_id: boxId,
+    items: [{ item_id: 'rolling_paper', item_name: '벚꽃 편지함 롤링페이퍼', price: 990, quantity: 1 }],
+  })
+}

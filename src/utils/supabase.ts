@@ -11,16 +11,19 @@ export interface Database {
           id: string
           owner_id: string
           nickname: string
+          is_premium: boolean
           created_at: string
         }
         Insert: {
           id: string
           owner_id?: string
           nickname: string
+          is_premium?: boolean
           created_at?: string
         }
         Update: {
           nickname?: string
+          is_premium?: boolean
         }
         Relationships: []
       }
@@ -33,6 +36,7 @@ export interface Database {
           from_name: string
           is_anonymous: boolean
           created_at: string
+          deleted_at: string | null
         }
         Insert: {
           id?: string
@@ -42,9 +46,10 @@ export interface Database {
           from_name?: string
           is_anonymous?: boolean
           created_at?: string
+          deleted_at?: string | null
         }
         Update: {
-          [key: string]: never
+          deleted_at?: string | null
         }
         Relationships: []
       }
