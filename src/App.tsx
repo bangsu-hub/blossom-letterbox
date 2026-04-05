@@ -777,26 +777,41 @@ function RollingPaperModal({
 
   const displayLetters = paid ? realLetters : SAMPLE_LETTERS
 
-  // IMP.init()은 페이지당 1회만 호출해야 합니다.
-  // 모달이 열릴 때 한 번만 초기화합니다.
   useEffect(() => {
     const impCode = import.meta.env.VITE_PORTONE_IMP_CODE as string | undefined
-    if (window.IMP && impCode) {
-      window.IMP.init(impCode)
-    }
+    if (window.IMP && impCode) window.IMP.init(impCode)
   }, [])
 
-  const handlePayment = () => {
+  // iamport.js 동적 로드 (head script 실패 시 fallback)
+  const ensureIMP = (impCode: string): Promise<void> =>
+    new Promise((resolve, reject) => {
+      if (window.IMP) { window.IMP.init(impCode); resolve(); return }
+      const existing = document.querySelector('script[src*="iamport.kr"]')
+      if (existing) { reject(new Error('iamport.js 로드 대기 중')); return }
+      const script = document.createElement('script')
+      script.src = 'https://cdn.iamport.kr/v1/iamport.js'
+      script.onload = () => { window.IMP!.init(impCode); resolve() }
+      script.onerror = () => reject(new Error('iamport.js 로드 실패. 네트워크를 확인해주세요.'))
+      document.head.appendChild(script)
+    })
+
+  const handlePayment = async () => {
     const impCode = import.meta.env.VITE_PORTONE_IMP_CODE as string | undefined
-    if (!window.IMP || !impCode) {
-      setPayError('결제 모듈을 불러오는 중이에요. 잠시 후 다시 시도해주세요.')
+    if (!impCode) {
+      setPayError('결제 설정 오류가 발생했어요. 잠시 후 다시 시도해주세요.')
       return
     }
-    // 혹시 init이 누락된 경우를 대비해 재호출
-    window.IMP.init(impCode)
 
     setPayLoading(true)
     setPayError('')
+
+    try {
+      await ensureIMP(impCode)
+    } catch (e) {
+      setPayError(String(e))
+      setPayLoading(false)
+      return
+    }
 
     // Date.now() + 랜덤 suffix로 중복 방지
     const merchantUid = `blossom-${boxId.slice(0, 8)}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
