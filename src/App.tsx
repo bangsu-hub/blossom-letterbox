@@ -778,8 +778,23 @@ function RollingPaperModal({
   const displayLetters = paid ? realLetters : SAMPLE_LETTERS
 
   useEffect(() => {
+    // IMP init
     const impCode = (import.meta.env.VITE_PORTONE_IMP_CODE as string | undefined) || 'imp81538743'
     if (window.IMP && impCode) window.IMP.init(impCode)
+
+    // 모달 열릴 때마다 DB에서 is_premium 동기화
+    // 결제 완료 후 콜백/redirect 처리 실패 시에도 올바른 상태를 보여줌
+    supabase
+      .from('letter_boxes')
+      .select('is_premium')
+      .eq('id', boxId)
+      .single()
+      .then(({ data }) => {
+        if (data?.is_premium && !paid) {
+          setPaid(true)
+          onPaid()
+        }
+      })
   }, [])
 
   // iamport.js 동적 로드 (head script 실패 시 fallback)
