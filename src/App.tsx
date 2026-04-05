@@ -1806,6 +1806,11 @@ function DashboardScreen({ userId }: { userId: string }) {
       const merchantUid = params.get('merchant_uid')
       const impSuccess = params.get('imp_success')
 
+      // 🔍 임시 디버그: URL 파라미터 확인
+      if (window.location.search) {
+        alert(`[DEBUG] search: ${window.location.search}\nimp_uid: ${impUid}\nmerchant_uid: ${merchantUid}\nimp_success: ${impSuccess}`)
+      }
+
       if (impUid && merchantUid) {
         // URL 파라미터 즉시 정리 (새로고침 시 중복 실행 방지)
         window.history.replaceState({}, '', window.location.pathname)
