@@ -780,16 +780,20 @@ function RollingPaperModal({
   // IMP.init()은 페이지당 1회만 호출해야 합니다.
   // 모달이 열릴 때 한 번만 초기화합니다.
   useEffect(() => {
-    if (window.IMP) {
-      window.IMP.init(import.meta.env.VITE_PORTONE_IMP_CODE as string)
+    const impCode = import.meta.env.VITE_PORTONE_IMP_CODE as string | undefined
+    if (window.IMP && impCode) {
+      window.IMP.init(impCode)
     }
   }, [])
 
   const handlePayment = () => {
-    if (!window.IMP) {
+    const impCode = import.meta.env.VITE_PORTONE_IMP_CODE as string | undefined
+    if (!window.IMP || !impCode) {
       setPayError('결제 모듈을 불러오는 중이에요. 잠시 후 다시 시도해주세요.')
       return
     }
+    // 혹시 init이 누락된 경우를 대비해 재호출
+    window.IMP.init(impCode)
 
     setPayLoading(true)
     setPayError('')
